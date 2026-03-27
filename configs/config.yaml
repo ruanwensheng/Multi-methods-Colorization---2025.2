@@ -1,0 +1,31 @@
+project:
+  name: "colorization-mlops"
+  version: "0.1.0"
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_samples: "data/samples"
+  models: "models"
+  results: "results"
+
+image:
+  input_size: [256, 256] # resize về size chuẩn
+  color_space: "LAB" # dùng cho scribble-based
+
+scribble:
+  weight_sigma: 0.1 # tham số từ Levin et al. 2004
+  n_neighbors: 8 # 8 pixel lân cận
+
+example_based:
+  n_superpixels: 200 # số superpixel khi segment
+  feature_levels: ["low", "mid", "high"]
+
+deep_learning:
+  model: "unet" # hoặc "ddgan"
+  epochs: 50
+  batch_size: 8
+  learning_rate: 0.0002
+
+evaluation:
+  metrics: ["psnr", "ssim", "lpips"]
