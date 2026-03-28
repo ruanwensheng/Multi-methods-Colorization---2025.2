@@ -21,6 +21,7 @@ models/*.pt
 
 # MLflow
 mlruns/
+mlflow.db
 
 # IDE
 .vscode/settings.json
