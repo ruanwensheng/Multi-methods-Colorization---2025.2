@@ -1,31 +1,96 @@
 project:
   name: "colorization-mlops"
-  version: "0.1.0"
+  version: "0.2.0"
 
+# --- Paths ---
 paths:
   data_raw: "data/raw"
   data_processed: "data/processed"
   data_samples: "data/samples"
   models: "models"
   results: "results"
+  data_coco: "data/raw/coco2017"
+  models_pretrained: "models/pretrained"
+  models_deep: "models/deep_learning"
+  results_deep: "results/deep_learning"
 
+# --- Image Settings ---
 image:
-  input_size: [256, 256] # resize về size chuẩn
-  color_space: "LAB" # dùng cho scribble-based
+  input_size: [256, 256]
+  color_space: "LAB"
 
+# --- Scribble-based Method ---
 scribble:
-  weight_sigma: 0.1 # tham số từ Levin et al. 2004
-  n_neighbors: 8 # 8 pixel lân cận
+  weight_sigma: 0.1
+  n_neighbors: 8
 
+# --- Example-based Method ---
 example_based:
-  n_superpixels: 200 # số superpixel khi segment
+  n_superpixels: 200
   feature_levels: ["low", "mid", "high"]
 
+# --- Deep Learning Method ---
 deep_learning:
-  model: "unet" # hoặc "ddgan"
+  # Architecture (Zhang et al. 2016)
+  model: "zhang16"
+  num_classes: 233           # quantized ab color bins (sRGB gamut, auto-computed)
+  temperature: 0.38          # annealed-mean inference temperature
+
+  # Training
   epochs: 50
   batch_size: 8
   learning_rate: 0.0002
+  optimizer: "adam"
+  betas: [0.9, 0.999]
+  weight_decay: 0.0
+  scheduler: "step"          # "step", "cosine", or "none"
+  scheduler_step_size: 20
+  scheduler_gamma: 0.5
+  loss: "cross_entropy"      # "cross_entropy" or "huber"
 
+  # Mixed precision (for 6GB VRAM GPUs)
+  use_amp: true
+
+  # Data
+  dataset: "coco2017"
+  num_workers: 0             # 0 for Windows compatibility
+  pin_memory: true
+
+  # Fine-tuning
+  pretrained_weights: "models/pretrained/zhang16_eccv.pth"
+  freeze_encoder: false
+  finetune_epochs: 10
+
+  # Benchmark
+  benchmark_size: 500        # shared test subset size
+
+  # Comparison models (4 categories: CNN, Interactive CNN, GAN, Diffusion)
+  # CNN: Zhang 2016 - our main reimplementation (see model.py)
+  comparison:
+    # Interactive CNN: Zhang 2017 (SIGGRAPH) - automatic mode with zero hints
+    # Paper: "Real-Time User-Guided Image Colorization with Learned Deep Priors"
+    # Repo: https://github.com/richzhang/colorization
+    zhang2017:
+      enabled: true
+    # GAN: DeOldify (Self-Attention GAN / NoGAN)
+    # Theory: ChromaGAN (Vitoria 2020), Practice: DeOldify
+    # Repo: https://github.com/pvitoria/ChromaGAN
+    deoldify:
+      enabled: true
+      model_path: "models/pretrained/deoldify_artistic.pth"
+    # Diffusion: ControlNet + Stable Diffusion 2.1
+    # Theory: Palette (Saharia 2022), Practice: ControlNet (Zhang & Agrawala 2023)
+    # Repo: https://github.com/lllyasviel/ControlNet
+    controlnet:
+      enabled: true
+      controlnet_model: "neurallove/controlnet-sd21-colorization-diffusers"
+      sd_model: "stabilityai/stable-diffusion-2-1-base"
+      num_inference_steps: 30
+      guidance_scale: 7.5
+
+# --- Evaluation ---
 evaluation:
   metrics: ["psnr", "ssim", "lpips"]
+
+# --- Device ---
+device: "auto"  # "auto", "cuda", or "cpu"

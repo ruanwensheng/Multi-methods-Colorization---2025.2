@@ -23,6 +23,13 @@ models/*.pt
 mlruns/
 mlflow.db
 
+# Large model weights
+models/pretrained/
+models/deep_learning/*.pth
+
 # IDE
 .vscode/settings.json
 *.swp
+
+# Temp files
+.tmp/
