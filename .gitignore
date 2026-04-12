@@ -31,5 +31,8 @@ models/deep_learning/*.pth
 .vscode/settings.json
 *.swp
 
+# Documents (keep .docx local only)
+documents/*.docx
+
 # Temp files
 .tmp/
