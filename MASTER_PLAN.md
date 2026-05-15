@@ -1,76 +1,6 @@
 # Master Plan: Multi-Methods Colorization (CV 2025.2)
 
-> **Status:** Active  
-> **Owner:** Project Lead  
-> **Last updated:** 2026-05-15  
-> **Deadline:** ~2026-06-05 (3 weeks)
-
----
-
-## 1. Project Overview
-
-Build and compare three image colorization methods on a shared benchmark:
-
-| Method | Branch | Algorithm | Team |
-|--------|--------|-----------|------|
-| Deep Learning | `feature/deep` | Zhang 2016 CNN + 4 DL categories | 2 people |
-| Scribble-based | `feature/scribble` | Levin 2004 "Colorization using Optimization" | 1 person |
-| Example-based | `feature/example` | Welsh/Mueller 2002 luminance transfer | 2 people |
-
-**Final deliverables:** Source code (GitHub) · LaTeX report (IEEE) · Gradio demo · Slides
-
----
-
-## 2. Team Responsibilities
-
-| Role | Branch | Core tasks |
-|------|--------|------------|
-| DL Engineer A | `feature/deep` | Execute pipeline: download COCO, train Zhang16, eval 5 models |
-| DL Engineer B | `feature/deep` | Fix Phase 0 issues, run tests, write report sections 3–5 |
-| Scribble Engineer | `feature/scribble` | Implement Levin 2004, tests, notebook, report section |
-| Example Engineer A | `feature/example` | Implement Welsh 2002 core algorithm + KD-tree matching |
-| Example Engineer B | `feature/example` | Tests, evaluation, notebook, report section |
-| **Project Lead** | `develop` / `main` | Docker, Gradio demo, report integration, slides, merge coordination |
-
----
-
-## 3. Branch Strategy
-
-```
-main             <- final release (tag v1.0 when done)
-develop          <- integration hub (all merges land here first)
-feature/deep     <- Deep Learning (code-complete, execution phase)
-feature/scribble <- Scribble-based (needs implementation)
-feature/example  <- Example-based (needs implementation)
-```
-
-### Git Workflow per person
-
-```bash
-# Each morning: sync from develop
-git fetch origin
-git merge origin/develop
-
-# Work on your feature
-git add src/<your_method>/
-git commit -m "feat: ..."
-git push origin feature/<your-branch>
-
-# When ready to merge: open PR -> feature/* -> develop
-# Lead reviews and merges
-```
-
-### Merge order
-1. `feature/deep` -> `develop` (first, since code is done)
-2. `feature/scribble` -> `develop`
-3. `feature/example` -> `develop`
-4. `develop` -> `main` (final release)
-
----
-
-## 4. Master Timeline
-
-### Week 1 (Days 1-7): Foundation + Implementation Start
+## Week 1 (Days 1-7): Foundation + Implementation Start
 
 | Day | Deep (2 people) | Scribble (1 person) | Example (2 people) | Lead |
 |-----|-----------------|---------------------|--------------------|------|
@@ -78,7 +8,7 @@ git push origin feature/<your-branch>
 | 3-4 | Download COCO 2017 (~18 GB) + weights | Implement core solver | Implement feature extraction + KD-tree | Scaffold `app/demo.py` |
 | 5-7 | Start Zhang16 fine-tuning (long-running) | Add ScribbleColorizer class + tests | Add ExampleColorizer class + tests | Docker polish, start LaTeX structure |
 
-### Week 2 (Days 8-14): Complete + Evaluate
+## Week 2 (Days 8-14): Complete + Evaluate
 
 | Day | Deep | Scribble | Example | Lead |
 |-----|------|----------|---------|------|
@@ -86,7 +16,7 @@ git push origin feature/<your-branch>
 | 11-12 | Generate comparison figures, write report sections | Write notebook 01 + report section | Write notebook 02 + report section | Merge scribble + example -> develop |
 | 13-14 | Review + polish | Review + polish | Review + polish | Wire Gradio demo with all 3 methods |
 
-### Week 3 (Days 15-21): Integration + Report + Polish
+## Week 3 (Days 15-21): Integration + Report + Polish
 
 | Day | All | Lead |
 |-----|-----|------|
@@ -96,9 +26,9 @@ git push origin feature/<your-branch>
 
 ---
 
-## 5. Technical Specs per Method
+# 5. Technical Specs per Method
 
-### 5.1 Scribble-based (Levin 2004)
+## 5.1 Scribble-based (Levin 2004)
 
 **Paper:** "Colorization using Optimization" - Levin, Lischinski, Weiss (SIGGRAPH 2004)  
 **Core idea:** Neighboring pixels with similar luminance should have similar color. User scribbles provide hard constraints. Solve as a sparse linear system.
@@ -143,7 +73,7 @@ scribble:
 
 ---
 
-### 5.2 Example-based (Welsh/Mueller 2002)
+## 5.2 Example-based (Welsh/Mueller 2002)
 
 **Paper:** "Transferring Color to Greyscale Images" - Welsh, Ashikhmin, Mueller (Stony Brook, SIGGRAPH 2002)  
 **Core idea:** Match each pixel in the grayscale target to the most similar pixel in the color reference image using luminance + texture statistics. Transfer chrominance from reference to target.
@@ -189,7 +119,7 @@ example_based:
 
 ---
 
-### 5.3 Deep Learning (Zhang 2016) - Execution Phase
+## 5.3 Deep Learning (Zhang 2016) - Execution Phase
 
 Current state: **code-complete, not yet executed.** Known issues to fix before running:
 
@@ -214,7 +144,7 @@ python tools/compare_methods.py --max-images 50          # T4.1
 
 ---
 
-## 6. Unified API Contract
+# 6. Unified API Contract
 
 All three methods expose the same base interface so the demo app and cross-method comparison work uniformly:
 
@@ -230,13 +160,13 @@ Cross-method comparison on `main` will call this interface — do NOT break it.
 
 ---
 
-## 7. Docker - Dev Environment
+# 7. Docker - Dev Environment
 
 **Goal:** Everyone runs the same Python environment regardless of OS (Windows/Mac).  
 **Scope:** CPU-only — development, unit tests, notebooks, Gradio demo.  
 **GPU training:** Done natively (not in Docker) — CUDA in Docker on Windows/Mac is too complex.
 
-### Files to create (Lead, Week 1 Day 1-2)
+## Files to create (Lead, Week 1 Day 1-2)
 
 ```
 docker/
@@ -276,13 +206,13 @@ docker compose run --rm dev jupyter lab --ip 0.0.0.0 --no-browser  # notebooks
 
 ---
 
-## 8. Gradio Demo App
+# 8. Gradio Demo App
 
 **Location:** `app/demo.py`  
 **Framework:** Gradio Blocks  
 **Launch:** `python app/demo.py` -> `http://localhost:7860`
 
-### Structure
+## Structure
 
 ```
 app/
@@ -292,7 +222,7 @@ app/
     └── samples/         # 5-10 sample grayscale images for quick demo
 ```
 
-### Tab layout
+## Tab layout
 
 **Tab 1 - Deep Learning:**
 - Input: image upload (grayscale)
@@ -311,13 +241,13 @@ app/
 
 ---
 
-## 9. LaTeX Report
+# 9. LaTeX Report
 
 **Location:** `reports/` (created on `develop` after all merges)  
 **Format:** IEEE conference (`IEEEtran` class), English  
 **Compile:** `pdflatex main && bibtex main && pdflatex main && pdflatex main`
 
-### Structure
+## Structure
 
 ```
 reports/
@@ -335,7 +265,7 @@ reports/
 └── figures/
 ```
 
-### Section ownership
+## Section ownership
 
 | Section | Author | Due |
 |---------|--------|-----|
@@ -350,11 +280,11 @@ reports/
 
 ---
 
-## 10. Slides
+# 10. Slides
 
 **Location:** `slides/` (PowerPoint or PDF), ~15 min presentation
 
-### Outline (15-20 slides)
+## Outline (15-20 slides)
 1. Problem: Why colorization? (1 slide)
 2. Three methods overview — diagram (1 slide)
 3. Scribble-based: algorithm + result (2 slides)
@@ -367,7 +297,7 @@ reports/
 
 ---
 
-## 11. Shared Benchmark
+# 11. Shared Benchmark
 
 All three methods are evaluated on the **same 500 images** (`data/raw/coco2017/benchmark/`, seed=42).
 
@@ -391,7 +321,7 @@ All three methods are evaluated on the **same 500 images** (`data/raw/coco2017/b
 
 ---
 
-## 12. Immediate Actions (Do This First — Day 1)
+# 12. Immediate Actions (Do This First — Day 1)
 
 1. **Fix `requirements.txt`** — encoding bug is already fixed in this branch; push to develop
 2. **Fix `configs/config.yaml`** — remove scribble/example sections, fix `num_classes: 233` -> `313`
@@ -402,32 +332,32 @@ All three methods are evaluated on the **same 500 images** (`data/raw/coco2017/b
 
 ---
 
-## 13. Acceptance Criteria (Definition of Done)
+# 13. Acceptance Criteria (Definition of Done)
 
-### Code
+## Code
 - [ ] `pytest tests/ -v` passes for all 3 methods
 - [ ] `configs/config.yaml` has clean section per method
 - [ ] Notebooks 01-04 run end-to-end without errors
 - [ ] `app/demo.py` starts and all 3 tabs produce output
 
-### Results
+## Results
 - [ ] Scribble + Example evaluated on COCO benchmark (PSNR/SSIM/LPIPS)
 - [ ] All 5 DL model variants evaluated on benchmark
 - [ ] Cross-method comparison table complete (`results/comparison/`)
 - [ ] Qualitative grids generated for report
 
-### Report
+## Report
 - [ ] `reports/main.tex` compiles to PDF without errors
 - [ ] All 8 sections present
 - [ ] All citations resolve
 - [ ] Figures and tables render correctly
 
-### Demo + Docker
+## Demo + Docker
 - [ ] `docker compose up demo` starts Gradio without errors
 - [ ] All 3 tabs produce colorized output
 - [ ] Sample images included for quick demo
 
-### Delivery
+## Delivery
 - [ ] All feature branches merged to `develop`
 - [ ] `develop` merged to `main` and tagged `v1.0`
 - [ ] README on `main` explains setup and usage
