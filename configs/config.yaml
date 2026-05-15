@@ -21,19 +21,20 @@ image:
 
 # --- Scribble-based Method ---
 scribble:
-  weight_sigma: 0.1
-  n_neighbors: 8
+  sigma: 0.1          # affinity Gaussian sigma (intensity difference scale)
+  n_neighbors: 8      # pixel neighborhood (4 or 8-connected)
 
 # --- Example-based Method ---
 example_based:
-  n_superpixels: 200
-  feature_levels: ["low", "mid", "high"]
+  neighborhood_size: 5    # NxN window for local std computation
+  k_neighbors: 5          # KD-tree nearest neighbors to sample from
+  downsample: 0.5         # resize reference for speed (1.0 = no downscale)
 
 # --- Deep Learning Method ---
 deep_learning:
   # Architecture (Zhang et al. 2016)
   model: "zhang16"
-  num_classes: 233           # quantized ab color bins (sRGB gamut, auto-computed)
+  num_classes: 313           # quantized ab color bins from pts_in_hull.npy
   temperature: 0.38          # annealed-mean inference temperature
 
   # Training

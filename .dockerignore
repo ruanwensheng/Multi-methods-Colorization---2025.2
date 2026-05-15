@@ -1,0 +1,15 @@
+data/
+models/
+results/
+mlruns/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+*.pth
+*.h5
