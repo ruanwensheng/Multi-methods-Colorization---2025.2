@@ -4,9 +4,8 @@
 
 | Day | Deep (2 people) | Scribble (1 person) | Example (2 people) | Lead |
 |-----|-----------------|---------------------|--------------------|------|
-| 1-2 | Fix Phase 0: tests, config, notebook 04 | Set up branch, read Levin 2004 | Set up branch, read Welsh paper | Fix requirements.txt, create Docker |
-| 3-4 | Download COCO 2017 (~18 GB) + weights | Implement core solver | Implement feature extraction + KD-tree | Scaffold `app/demo.py` |
-| 5-7 | Start Zhang16 fine-tuning (long-running) | Add ScribbleColorizer class + tests | Add ExampleColorizer class + tests | Docker polish, start LaTeX structure |
+| 1-3 | Download COCO 2017 (~18 GB) + weights | Implement core solver | Implement feature extraction + KD-tree | Scaffold `app/demo.py` |
+| 4-7 | Start Zhang16 fine-tuning (long-running) | Add ScribbleColorizer class + tests | Add ExampleColorizer class + tests | Docker polish, start LaTeX structure |
 
 ## Week 2 (Days 8-14): Complete + Evaluate
 
@@ -27,6 +26,26 @@
 ---
 
 # 5. Technical Specs per Method
+
+## 5.0 Input Preprocessing
+
+### Shared — caller's responsibility
+
+Tất cả ba method đều nhận `gray_image` là **grayscale BGR image**. Caller (demo app, evaluation scripts) có trách nhiệm chuyển ảnh màu sang grayscale trước khi gọi `colorize()`.
+
+Chuẩn chuyển đổi: `cv2.COLOR_BGR2GRAY` (luminance formula: 0.299R + 0.587G + 0.114B). Mỗi `colorize()` phải chấp nhận cả hai dạng `(H, W)` và `(H, W, 3)`.
+
+### Per-method — nằm trong `colorize()`
+
+| Method | Color space dùng nội bộ | Preprocessing bên trong |
+|--------|------------------------|------------------------|
+| Scribble | YUV | BGR → YUV; dùng Y làm affinity weights; sau khi solve ghép lại Y + U + V → BGR |
+| Example | CIE Lab | Target BGR → Lab; Reference BGR → Lab; feature = (L, std của L trong cửa sổ NxN) |
+| Deep Learning | CIE Lab | BGR → Lab; L normalize về [-1, 1]; resize 256×256 cho model input; output là kênh ab |
+
+Mỗi method **tự xử lý preprocessing** bên trong.
+
+---
 
 ## 5.1 Scribble-based (Levin 2004)
 
@@ -50,24 +69,9 @@ src/scribble/
 └── utils.py             # yuv conversions, scribble extraction
 ```
 
-**Unified API:**
-```python
-class ScribbleColorizer:
-    def colorize(self, gray_image, scribble_overlay) -> tuple[np.ndarray, dict]:
-        """
-        gray_image:       (H, W) or (H, W, 3) BGR grayscale image
-        scribble_overlay: (H, W, 4) BGRA - alpha=0 for unmarked pixels,
-                          alpha=255 for scribble pixels with their BGR color
-        Returns: (colorized_bgr: np.ndarray HxWx3, info: dict)
-        """
-```
+**Unified API:** `ScribbleColorizer.colorize(gray_image, scribble_overlay)` — `gray_image` is `(H, W, 3)` BGR, `scribble_overlay` is `(H, W, 4)` BGRA with alpha=255 on scribble pixels. Returns `(colorized_bgr, info_dict)`. See §6.
 
-**Key parameters (add to config.yaml under `scribble:`):**
-```yaml
-scribble:
-  sigma: 0.1          # affinity Gaussian sigma (intensity difference scale)
-  n_neighbors: 8      # pixel neighborhood size (4 or 8-connected)
-```
+**Key config keys (`scribble:` in config.yaml):** `sigma` (default 0.1 — Gaussian affinity scale), `n_neighbors` (default 8 — 8-connected neighborhood).
 
 **Libraries:** `numpy`, `scipy.sparse`, `scipy.sparse.linalg`, `opencv-python`
 
@@ -96,65 +100,80 @@ src/example_based/
 └── utils.py             # lab conversions, neighborhood statistics
 ```
 
-**Unified API:**
-```python
-class ExampleColorizer:
-    def colorize(self, gray_image, reference_image) -> tuple[np.ndarray, dict]:
-        """
-        gray_image:       (H, W) or (H, W, 3) BGR grayscale image
-        reference_image:  (H, W, 3) BGR color reference image
-        Returns: (colorized_bgr: np.ndarray HxWx3, info: dict)
-        """
-```
+**Unified API:** `ExampleColorizer.colorize(gray_image, reference_image)` — both inputs are `(H, W, 3)` BGR. Returns `(colorized_bgr, info_dict)`. See §6.
 
-**Key parameters (update `example_based:` in config.yaml):**
-```yaml
-example_based:
-  neighborhood_size: 5    # NxN window for local std computation
-  k_neighbors: 5          # KD-tree nearest neighbors to sample from
-  downsample: 0.5         # resize reference for speed (1.0 = no downscale)
-```
+**Key config keys (`example_based:` in config.yaml):** `neighborhood_size` (default 5 — NxN window for std), `k_neighbors` (default 5 — KD-tree candidates), `downsample` (default 0.5 — resize reference for speed).
 
 **Libraries:** `numpy`, `opencv-python`, `scikit-learn` (KDTree), `scikit-image`
 
 ---
 
-## 5.3 Deep Learning (Zhang 2016) - Execution Phase
+## 5.3 Deep Learning (Zhang 2016)
 
-Current state: **code-complete, not yet executed.** Known issues to fix before running:
+**Paper:** "Colorful Image Colorization" — Zhang, Isola, Efros (ECCV 2016)  
+**Core idea:** Frame colorization as classification over 313 quantized ab bins. Class-rebalanced cross-entropy upweights rare/saturated colors to produce vivid results.
 
-| Issue | File | Fix |
-|-------|------|-----|
-| `scribble:` / `example_based:` sections | `configs/config.yaml` | Remove those sections |
-| `num_classes: 233` | `configs/config.yaml` | Change to `313` |
-| `fastapi`, `uvicorn` in requirements | `requirements.txt` | Already removed (this commit) |
-| Encoding bug (space between every char) | `requirements.txt` | Already fixed (this commit) |
-| Notebook 04 is cross-method | `notebooks/04_method_comparison.ipynb` | Rewrite as 5-model DL comparison |
+### Model Variants
 
-Execution order after fixes:
-```bash
-pytest tests/ -v                                          # T0.1 - must be all green
-python tools/download_coco.py --split both               # T1.1 (~18 GB)
-python tools/download_pretrained.py --model zhang16      # T1.2
-python tools/train_deep.py --config configs/config.yaml  # T2.1 (~4-12h GPU)
-python tools/evaluate_deep.py --tag pretrained           # T3.1
-python tools/evaluate_deep.py --tag finetuned            # T3.2
-python tools/compare_methods.py --max-images 50          # T4.1
-```
+| # | Category | Model | Source | Mode |
+|---|----------|-------|--------|------|
+| 1 | CNN | Zhang16 Pretrained | Our reimplementation + official ECCV weights | Inference only |
+| 2 | CNN | Zhang16 Fine-tuned | Our reimplementation + fine-tuned on COCO 2017 | Fine-tune |
+| 3 | Interactive CNN | Zhang17 auto | Official `colorizers` package, zero hints | Inference only |
+| 4 | GAN | DeOldify | Official pretrained (Self-Attention GAN) | Inference only |
+| 5 | Diffusion | ControlNet + SD 2.1 | HuggingFace `neurallove/controlnet-sd21-colorization-diffusers` | Inference only |
+
+Only Zhang16 (#1, #2) is our code. Models #3–#5 wrap third-party pretrained weights with the unified `colorize()` API.
+
+### Zhang16Net Architecture
+
+- **Input:** L channel `(B, 1, H, W)`, normalized to `[-1, 1]`
+- **Encoder:** 8 conv blocks — blocks 1–3 stride-2 (H→H/8), blocks 4–7 dilated at H/8
+- **Decoder:** block 8 upsamples H/8→H/4, then 1×1 conv → `(B, 313, H/4, W/4)` logits
+- **Inference:** softmax → upsample → annealed-mean decoding (T=0.38) → ab values
+- **Quantization:** 313 in-gamut ab bins (`src/deep_learning/pts_in_hull.npy`)
+- **Loss:** class-rebalanced cross-entropy (Zhang 2016 Eq. 2–4)
+
+### Training Hyperparameters (Zhang16 Fine-tuning)
+
+| Parameter | Value |
+|-----------|-------|
+| Base weights | Zhang16 ECCV pretrained |
+| Dataset | COCO 2017 train (118K images) |
+| Epochs | 50 |
+| Batch size | 8 (AMP enabled for 6 GB VRAM) |
+| Learning rate | 0.0002 (Adam) |
+| Scheduler | StepLR (step=20, gamma=0.5) |
+| Input size | 256×256 |
+
+### Execution Order
+
+Current state: **code-complete.** Pre-training fixes already applied (`requirements.txt`, `config.yaml`, `num_classes=313`).
+
+1. `pytest tests/ -v` — all tests green (T0.1)
+2. `tools/download_coco.py --split both` — COCO 2017 (~18 GB) (T1.1)
+3. `tools/download_pretrained.py --model zhang16` — official ECCV weights (T1.2)
+4. `tools/train_deep.py --config configs/config.yaml` — fine-tune (~4–12h GPU) (T2.1)
+5. `tools/evaluate_deep.py --tag pretrained` (T3.1)
+6. `tools/evaluate_deep.py --tag finetuned` (T3.2)
+7. `tools/compare_methods.py --max-images 50` (T4.1)
+
+### Risks
+
+| Risk | Mitigation |
+|------|------------|
+| VRAM overflow (6 GB GTX 1660) | AMP enabled; reduce batch size to 4 if OOM |
+| ControlNet needs >6 GB | Run on RTX 2080 Ti, or use CPU offloading |
+| DeOldify/ControlNet dependency conflicts | Install in separate conda env; document in workflow |
+| Fine-tuning diverges | Start from pretrained, conservative LR, monitor val loss |
 
 ---
 
 # 6. Unified API Contract
 
-All three methods expose the same base interface so the demo app and cross-method comparison work uniformly:
+All three methods expose the same base interface so the demo app and cross-method comparison work uniformly.
 
-```python
-result_bgr, info = colorizer.colorize(image, **kwargs)
-
-# result_bgr: np.ndarray, shape (H, W, 3), dtype uint8, BGR
-# info: dict with at least:
-#   {"method": str, "time_seconds": float, "image_size": (H, W)}
-```
+`colorizer.colorize(image, **kwargs)` returns `(result_bgr, info)` where `result_bgr` is `(H, W, 3)` BGR uint8 and `info` is a dict containing at least `method` (str), `time_seconds` (float), and `image_size` (H, W).
 
 Cross-method comparison on `main` will call this interface — do NOT break it.
 
@@ -166,43 +185,17 @@ Cross-method comparison on `main` will call this interface — do NOT break it.
 **Scope:** CPU-only — development, unit tests, notebooks, Gradio demo.  
 **GPU training:** Done natively (not in Docker) — CUDA in Docker on Windows/Mac is too complex.
 
-## Files to create (Lead, Week 1 Day 1-2)
+## Files (already created)
 
-```
-docker/
-├── Dockerfile
-└── docker-compose.yml
-.dockerignore
-```
+`docker/Dockerfile`, `docker/docker-compose.yml`, `.dockerignore`
 
-**Dockerfile spec (CPU-only, Python 3.10):**
-```dockerfile
-FROM python:3.10-slim
-
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx libglib2.0-0 git curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /workspace
-COPY requirements.txt .
-RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir gradio>=4.0
-
-CMD ["bash"]
-```
+**Dockerfile:** Python 3.10-slim, installs OpenCV system libs, CPU-only PyTorch, project requirements, and Gradio ≥4.0.
 
 **docker-compose.yml services:**
 - `dev`: mounts project as volume, exposes port 8888 (Jupyter)
-- `demo`: runs `python app/demo.py`, exposes port 7860 (Gradio)
+- `demo`: runs `app/demo.py`, exposes port 7860 (Gradio)
 
-**Usage:**
-```bash
-docker compose run --rm dev              # interactive dev shell
-docker compose up demo                   # start Gradio demo
-docker compose run --rm dev pytest tests/ -v    # run tests
-docker compose run --rm dev jupyter lab --ip 0.0.0.0 --no-browser  # notebooks
-```
+**Usage:** `docker compose run --rm dev` for interactive shell · `docker compose up demo` to start the Gradio app · `docker compose run --rm dev pytest tests/ -v` to run tests.
 
 ---
 
@@ -297,17 +290,73 @@ reports/
 
 ---
 
-# 11. Shared Benchmark
+# 11. Shared Benchmark & Unified Evaluation Dataflow
 
 All three methods are evaluated on the **same 500 images** (`data/raw/coco2017/benchmark/`, seed=42).
 
-**Metrics for every method:**
-- PSNR (higher is better)
-- SSIM (higher is better)
-- LPIPS (lower is better)
-- Inference time per image (seconds)
+## 11.1 Input Preparation per Method
 
-**Cross-method comparison table:**
+Benchmark images are grayscale. Each method needs different auxiliary inputs for automated evaluation:
+
+| Method | Auxiliary Input | Generation Strategy |
+|--------|----------------|---------------------|
+| Deep Learning | None | Feed grayscale image directly |
+| Example-based | Color reference image | Fixed pool of 100 diverse COCO val images (excl. benchmark); for each test image pick the reference with smallest L1 distance on 64-bin luminance histogram |
+| Scribble-based | BGRA scribble overlay | Oracle scribbles: randomly sample 1% of pixels (seed=42) from ground truth color image, mark positions with true BGR values and alpha=255 |
+
+Run `tools/prepare_benchmark.py` once before evaluation to build the reference pool and oracle scribbles.
+
+## 11.2 Color Space & I/O Standard
+
+| Stage | Space | dtype |
+|-------|-------|-------|
+| Input to `colorize()` | BGR (OpenCV) | uint8 |
+| Output from `colorize()` | BGR | uint8 |
+| Metric computation (PSNR / SSIM / LPIPS) | RGB | uint8 |
+
+All evaluation scripts convert BGR→RGB before computing metrics.
+
+## 11.3 Evaluation Commands
+
+1. `tools/evaluate_scribble.py --tag oracle` → `results/scribble/metrics/`
+2. `tools/evaluate_example.py --tag pool-match` → `results/example_based/metrics/`
+3. `tools/evaluate_deep.py --tag pretrained` and `--tag finetuned` → `results/deep_learning/metrics/`
+4. `tools/compare_methods.py --max-images 50` → `results/comparison/` (after all methods evaluated)
+
+## 11.4 Results Directory Structure
+
+```
+results/
+├── scribble/
+│   ├── metrics/
+│   │   ├── aggregate_metrics.json
+│   │   └── per_image_metrics.csv
+│   └── figures/
+├── example_based/
+│   ├── metrics/
+│   │   ├── aggregate_metrics.json
+│   │   └── per_image_metrics.csv
+│   └── figures/
+├── deep_learning/
+│   ├── metrics/              # per-model JSON + aggregate CSV
+│   ├── comparison/           # 5-model DL comparison grids
+│   └── figures/
+└── comparison/
+    ├── cross_method_summary.json
+    ├── per_image_metrics.csv
+    └── grids/
+```
+
+## 11.5 Metrics & Cross-Method Comparison
+
+| Metric | Better | Range |
+|--------|--------|-------|
+| PSNR | Higher | [0, ~50] dB |
+| SSIM | Higher | [0, 1] |
+| LPIPS | Lower | [0, 1] |
+| Time/img | Lower | seconds |
+
+**Fill after evaluation:**
 
 | Method | PSNR | SSIM | LPIPS | Time/img |
 |--------|------|------|-------|----------|
