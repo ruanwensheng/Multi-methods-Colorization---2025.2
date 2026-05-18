@@ -16,10 +16,14 @@
 | Task breakdown and current progress | `tasks/todo.md` |
 | Implementation plan with dependencies | `tasks/plan.md` |
 | Step-by-step pipeline SOP | `workflows/deep_learning_pipeline.md` |
+| **Benchmark methodology + leakage policy** | **`docs/benchmark_methodology.md`** |
 | All hyperparameters and paths | `configs/config.yaml` |
-| Reference papers (PDFs) | `documents/` |
+| Reference papers (PDFs) — external source material | `references/` |
+| Our own engineering docs (methodology, ADRs) | `docs/` |
 
 **Start here:** Read `tasks/todo.md` to see what's done and what's next.
+**Touching evaluation? Read `docs/benchmark_methodology.md` first** — it documents why
+the benchmark is sampled from `test2017` (not `val2017`) and what invariants must hold.
 
 ## Key Directories
 
@@ -80,14 +84,18 @@ This project uses the **WAT framework** (Workflows, Agents, Tools):
 | Config | Single YAML, loaded via `load_config()` |
 | CLI tools | `argparse` in `tools/`, import from `src.deep_learning` |
 | Device | Auto-detect via `get_device(cfg)` |
-| Reproducibility | Fixed seeds, benchmark subset seed=42 |
+| Reproducibility | Fixed seeds. Benchmark = stratified 1,000-image subset of test2017, seed=42. Bootstrap CIs use seed=42, n_boot=10,000. |
+| Uncertainty reporting | All metrics reported as `mean [95% CI lo, hi]` via percentile bootstrap |
 
 ## Boundaries
 
 ### Always Do
 - Use conda environment `AI`
-- Run experiments on the shared 500-image COCO 2017 benchmark
+- Evaluate on the shared **1,000-image stratified test2017 benchmark** (`data/raw/coco2017/benchmark/`)
+- **Never evaluate on `val2017/` or a subset of it** — `Trainer.fit` uses val2017 for best-checkpoint
+  selection; evaluating there would leak. See `docs/benchmark_methodology.md`.
 - Log all experiments to MLflow
+- Report metrics as `mean [95% CI]` via the bootstrap helper in `src/deep_learning/stats.py`
 - Use the unified `colorize()` API for model comparisons
 - Save checkpoints to `models/deep_learning/`, results to `results/deep_learning/`
 
@@ -98,6 +106,8 @@ This project uses the **WAT framework** (Workflows, Agents, Tools):
 - Running ControlNet (requires ~10GB VRAM)
 - Re-downloading COCO 2017 (18GB+ bandwidth)
 - Creating or overwriting workflow files
+- **Changing the benchmark composition** (size, source split, sampling strategy, seed) — these are
+  spec'd in `docs/benchmark_methodology.md` and changing them invalidates prior numbers
 
 ### Never Do
 - Add scribble or example-based code to this branch

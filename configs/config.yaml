@@ -33,7 +33,9 @@ example_based:
 deep_learning:
   # Architecture (Zhang et al. 2016)
   model: "zhang16"
-  num_classes: 233           # quantized ab color bins (sRGB gamut, auto-computed)
+  num_classes: 313           # quantized ab color bins from pts_in_hull.npy (Zhang 2016)
+                             # Note: ABQuantizer reads pts_in_hull.npy at runtime, so this
+                             # value is only a fallback if the .npy file is missing.
   temperature: 0.38          # annealed-mean inference temperature
 
   # Training
@@ -61,8 +63,9 @@ deep_learning:
   freeze_encoder: false
   finetune_epochs: 10
 
-  # Benchmark
-  benchmark_size: 500        # shared test subset size
+  # Benchmark — held-out evaluation set, seed=42 subset of test2017
+  # (NOT val2017, which is used for in-training validation/best-ckpt selection)
+  benchmark_size: 1000       # shared test subset size, sampled from test2017
 
   # Comparison models (4 categories: CNN, Interactive CNN, GAN, Diffusion)
   # CNN: Zhang 2016 - our main reimplementation (see model.py)

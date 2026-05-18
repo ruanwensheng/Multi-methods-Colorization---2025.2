@@ -2,6 +2,7 @@
 
 > **Branch:** `feature/deep`
 > **Created:** 2026-04-13
+> **Last updated:** 2026-05-19 — switched evaluation benchmark from val2017 subset to test2017 subset (1000 imgs, seed=42) to remove val/test contamination. See SPEC.md §6.3.
 > **Status:** Approved
 
 ---
@@ -15,7 +16,7 @@
 - **Config** (`configs/config.yaml`): DL hyperparameters defined
 - **Workflow** (`workflows/deep_learning_pipeline.md`): Step-by-step SOP
 - **Notebook 03** (`03_deep_learning_pipeline.ipynb`): Full pipeline walkthrough (18 KB, well-structured)
-- **Reference papers** (`documents/`): All 5 theory papers present (58 MB)
+- **Reference papers** (`references/`): All 5 theory papers present (58 MB)
 - **Infrastructure**: requirements.txt, pytest.ini, .gitignore all configured
 
 ### What's MISSING
@@ -109,11 +110,17 @@ Phase 6: Final Verification ────────────────
 **Goal:** Download all required data and pretrained weights.
 
 ### T1.1 — Download COCO 2017 dataset
-- **Command:** `python tools/download_coco.py --split both --benchmark-size 500`
-- **Downloads:** train2017 (~18GB, 118K images), val2017 (~1GB, 5K images), benchmark subset (500 images, seed=42)
-- **Risk:** Large download; use university network if possible. Script is idempotent.
-- **Acceptance:** `data/raw/coco2017/train2017/` has ~118K files, `val2017/` has ~5K files, `benchmark/` has 500 files
-- **Verification:** `ls data/raw/coco2017/train2017 | wc -l` → ~118287; `ls data/raw/coco2017/benchmark | wc -l` → 500
+- **Command:** `python tools/download_coco.py --source local-zip --split all --benchmark-size 1000`
+  (or `--source kaggle` / `--source http` if `archive.zip` isn't present)
+- **Downloads/extracts:** train2017 (~18 GB, 118K imgs), val2017 (~0.8 GB, 5K imgs),
+  test2017 (~6.2 GB, 40,670 imgs), annotations (~0.8 GB, 6 JSONs),
+  and a 1,000-image benchmark subset of **test2017** (seed=42).
+- **Why test2017 for benchmark:** val2017 is used by `Trainer.fit` for best-ckpt selection;
+  using a val2017 subset as the test set would leak. test2017 is COCO's held-out split. See SPEC §6.3.
+- **Risk:** Long extraction; idempotent on re-run.
+- **Acceptance:** train2017 ≈118,287, val2017 = 5,000, test2017 = 40,670, benchmark = 1,000.
+- **Verification:** `python tools/_verify_dataset.py` (after extending it to print test2017 + check that
+  benchmark is a subset of test2017, not val2017).
 
 ### T1.2 — Download pretrained weights
 - **Command:** `python tools/download_pretrained.py --model zhang16`
@@ -144,7 +151,8 @@ Phase 6: Final Verification ────────────────
 
 ## Phase 3: Evaluation (Per Model)
 
-**Goal:** Compute PSNR, SSIM, LPIPS for all 5 models on the 500-image benchmark.
+**Goal:** Compute PSNR, SSIM, LPIPS for all 5 models on the **1,000-image test2017 benchmark** (seed=42).
+The benchmark images were never seen during fine-tuning or best-checkpoint selection.
 
 ### T3.1 — Evaluate Zhang16 Pretrained
 - **Command:** `python tools/evaluate_deep.py --model-path models/pretrained/zhang16_eccv.pth --tag pretrained`

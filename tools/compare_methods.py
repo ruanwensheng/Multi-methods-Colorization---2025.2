@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.deep_learning.utils import load_config, compute_metrics
 from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.pretrained import get_comparison_models
+from src.deep_learning.stats import bootstrap_ci
 
 
 def load_all_models(cfg, model_path=None, device="auto"):
@@ -177,28 +178,52 @@ def main():
                 img_name=img_name
             )
 
-    # Aggregate and save results
-    print(f"\n{'='*70}")
-    print(f"{'Method':<25} {'PSNR':>10} {'SSIM':>10} {'Avg Time':>12}")
-    print(f"{'='*70}")
+    # Aggregate with bootstrap 95% CIs (10k resamples, seed=42)
+    print(f"\n{'='*95}")
+    print(f"{'Method':<25} {'PSNR [95% CI]':>22} {'SSIM [95% CI]':>22} {'Time/img':>12}")
+    print(f"{'='*95}")
 
     summary = {}
     for name, results_list in all_results.items():
         if not results_list:
             continue
-        psnr_mean = np.mean([r["psnr"] for r in results_list])
-        ssim_mean = np.mean([r["ssim"] for r in results_list])
-        time_mean = np.mean([r["elapsed_sec"] for r in results_list])
-        print(f"{name:<25} {psnr_mean:>10.2f} {ssim_mean:>10.4f} {time_mean:>10.3f}s")
+        psnr_ci = bootstrap_ci([r["psnr"] for r in results_list], ci=0.95, n_boot=10000, seed=42)
+        ssim_ci = bootstrap_ci([r["ssim"] for r in results_list], ci=0.95, n_boot=10000, seed=42)
+        time_mean = float(np.mean([r["elapsed_sec"] for r in results_list]))
 
-        summary[name] = {
-            "num_images": len(results_list),
-            "psnr_mean": float(psnr_mean),
-            "ssim_mean": float(ssim_mean),
-            "avg_time_sec": float(time_mean),
+        psnr_str = f"{psnr_ci['mean']:.2f} [{psnr_ci['ci_lo']:.2f}, {psnr_ci['ci_hi']:.2f}]"
+        ssim_str = f"{ssim_ci['mean']:.4f} [{ssim_ci['ci_lo']:.4f}, {ssim_ci['ci_hi']:.4f}]"
+        print(f"{name:<25} {psnr_str:>22} {ssim_str:>22} {time_mean:>10.3f}s")
+
+        entry = {
+            "num_images":  len(results_list),
+            "psnr_mean":   psnr_ci["mean"],
+            "psnr_std":    psnr_ci["std"],
+            "psnr_ci_lo":  psnr_ci["ci_lo"],
+            "psnr_ci_hi":  psnr_ci["ci_hi"],
+            "ssim_mean":   ssim_ci["mean"],
+            "ssim_std":    ssim_ci["std"],
+            "ssim_ci_lo":  ssim_ci["ci_lo"],
+            "ssim_ci_hi":  ssim_ci["ci_hi"],
+            "avg_time_sec": time_mean,
         }
 
-    print(f"{'='*70}")
+        # LPIPS if any image has it
+        lpips_vals = [r["lpips"] for r in results_list if r.get("lpips") is not None]
+        if lpips_vals:
+            lpips_ci = bootstrap_ci(lpips_vals, ci=0.95, n_boot=10000, seed=42)
+            entry.update({
+                "lpips_mean":  lpips_ci["mean"],
+                "lpips_std":   lpips_ci["std"],
+                "lpips_ci_lo": lpips_ci["ci_lo"],
+                "lpips_ci_hi": lpips_ci["ci_hi"],
+            })
+
+        entry["ci_level"] = 0.95
+        entry["n_bootstrap"] = 10000
+        summary[name] = entry
+
+    print(f"{'='*95}")
 
     # Save summary
     with open(os.path.join(output_dir, "comparison_summary.json"), "w") as f:

@@ -3,7 +3,7 @@
 > **Status:** Living document + strict acceptance criteria
 > **Branch:** `feature/deep`
 > **Owner:** Minh Kwang
-> **Last updated:** 2026-04-13
+> **Last updated:** 2026-05-19
 
 ---
 
@@ -25,6 +25,7 @@ Deliver a **complete deep learning colorization pipeline** that:
 
 1. Reimplements Zhang et al. 2016 "Colorful Image Colorization" from scratch
 2. Evaluates **5 model variants** across **4 DL categories** on a shared COCO 2017 benchmark
+   (a 1,000-image seed=42 subset of **test2017** — see §6.3 Data Splits)
 3. Produces quantitative metrics (PSNR, SSIM, LPIPS), qualitative visualizations, and a written report
 4. Is fully reproducible via CLI tools and documented workflows
 
@@ -53,7 +54,8 @@ Each category has a **theory paper** (the idea) and a **practical model** (what 
 | **GAN** | ChromaGAN (Vitoria, WACV 2020) | DeOldify (Jason Antic) — industry standard for photo restoration |
 | **Diffusion** | Palette (Saharia 2022, arXiv:2111.05826) | ControlNet (Zhang & Agrawala 2023, arXiv:2302.05543) + SD 2.1 |
 
-Reference PDFs are stored in `documents/`.
+Reference PDFs are stored in `references/` (external source material — papers we cite).
+Our own engineering documentation (methodology, ADRs) lives in `docs/`.
 
 ### Zhang16 Architecture (Our Reimplementation)
 
@@ -78,10 +80,14 @@ feature/deep branch
 │   └── config.yaml                 # Deep learning configuration only
 ├── data/
 │   └── raw/coco2017/               # COCO 2017 images (downloaded via tool)
-│       ├── train2017/              # 118K training images
-│       ├── val2017/                # 5K validation images
-│       └── benchmark/              # 500 shared test images (subset of val)
-├── documents/                      # Reference papers (PDFs) for DL method
+│       ├── train2017/              # 118K fine-tuning images
+│       ├── val2017/                # 5K images — used for in-training validation (best-ckpt selection)
+│       ├── test2017/               # 40,670 images — official COCO held-out split
+│       ├── annotations/            # 6 JSON files (Kaggle bundle; not used by colorization)
+│       └── benchmark/              # 1,000 shared eval images (seed=42 subset of test2017)
+├── references/                     # External reference papers (PDFs) — Zhang 2016/2017, ChromaGAN, Palette, ControlNet
+├── docs/                            # Our own engineering documentation
+│   └── benchmark_methodology.md     # Why/how the test2017 benchmark is built
 ├── models/
 │   ├── pretrained/                 # Official pretrained weights (downloaded)
 │   │   ├── zhang16_eccv.pth
@@ -161,11 +167,12 @@ All commands run from project root with conda environment `AI` activated.
 ### Step 1: Download COCO 2017
 
 ```bash
-python tools/download_coco.py --split both --benchmark-size 500
+python tools/download_coco.py --source local-zip --split all --benchmark-size 1000
 ```
-- Downloads train (118K, ~18GB) and val (5K, ~1GB)
-- Creates 500-image benchmark subset from val (seed=42)
-- Skips already-downloaded files
+- Extracts train (118K, ~18 GB), val (5K, ~0.8 GB), test (40,670, ~6.2 GB), annotations (~0.8 GB)
+  from a Kaggle `archive.zip` (or downloads via `--source kaggle` / `--source http` if not present)
+- Creates 1,000-image **benchmark subset from test2017** (seed=42) — held-out from training
+- Skips already-extracted splits
 
 ### Step 2: Download Pretrained Weights
 
@@ -238,7 +245,8 @@ mlflow ui
 
 ### 6.2 Evaluation Experiment: 5-Model Comparison
 
-All 5 models evaluated on the **same 500-image COCO 2017 benchmark** subset:
+All 5 models evaluated on the **same 1,000-image COCO 2017 benchmark** subset
+(seed=42 random sample from `test2017`):
 
 | Model | What We Measure |
 |-------|----------------|
@@ -250,6 +258,70 @@ All 5 models evaluated on the **same 500-image COCO 2017 benchmark** subset:
 
 **Quantitative metrics:** PSNR, SSIM, LPIPS (per-image and aggregate mean/std)
 **Qualitative outputs:** Side-by-side comparison grids (grayscale → each model → ground truth)
+
+### 6.3 Data Splits & Leakage Policy
+
+| Split | Size | Used For | Touched During Fine-tuning? |
+|-------|------|----------|----------------------------|
+| `train2017/` | 118,287 | Fine-tune Zhang16 | Yes — gradient updates |
+| `val2017/`   | 5,000   | In-training validation (best-checkpoint selection in `Trainer.fit`) | Yes — *only* for model selection (no gradients) |
+| `test2017/`  | 40,670  | Source pool for the held-out evaluation benchmark | **No** — never seen by training or model selection |
+| `benchmark/` | 1,000   | The shared 5-model evaluation set | **No** — strict subset of `test2017`, seed=42 |
+
+**Why the benchmark is sampled from `test2017`, not `val2017`:**
+`Trainer.fit` saves `best_model.pth` based on `val_loss` over `val2017` (`src/deep_learning/train.py`,
+the `if val_loss < self.best_val_loss` branch). Evaluating that same checkpoint on a `val2017`
+subset would be **validation/test contamination** for the fine-tuned model — its metrics would be
+over-optimistic by construction. `test2017` is COCO's official held-out split and is never seen
+during fine-tuning or checkpoint selection, so the same benchmark gives a clean comparison
+across all 5 model variants.
+
+The 4 third-party models (Zhang16 Pretrained, Zhang17, DeOldify, ControlNet) were trained on their
+own datasets (ImageNet/web crawl/etc.) — switching from `val2017` to `test2017` for the benchmark
+does not change their exposure either way, so the comparison stays consistent.
+
+**Why 1,000 images and not more or fewer:**
+- 500 → tight CIs already, but only 8 h total ControlNet compute. Acceptable but conservative.
+- **1,000 → 2× statistical power, ~16 h ControlNet compute, runnable overnight on RTX 2080 Ti. Chosen.**
+- 2,000+ → diminishing returns on stat power, multi-day GPU runs.
+- 40,670 (full test2017) → ControlNet alone ≈ 28 GPU-days, infeasible for a course project.
+
+**Sampling strategy — stratified by visual difficulty, not pure random:**
+
+Random sampling at n=1000 is *statistically* sound (CLT gives ±0.16 dB SE for PSNR with σ≈5 dB
+and a 2.5% finite-population correction), but a random draw can still under-represent specific
+content modes — e.g., all bright/saturated outdoor shots or all dim/desaturated indoor shots.
+That under-representation isn't a bias on the mean, but it makes the sample less defensible
+as "diverse."
+
+To address this, `create_benchmark_subset` in `tools/download_coco.py` uses **stratified
+proportional sampling** over a 4 × 4 = 16-cell grid:
+
+1. Compute two lightweight features for every image in `test2017/` (32×32 thumbnail, ~1 ms each):
+   - **mean RGB brightness** ∈ [0, 255]  — proxies indoor/outdoor lighting
+   - **mean per-pixel saturation** (max channel − min channel, averaged) ∈ [0, 255] — proxies
+     vivid vs. near-grayscale color
+2. Quantile-bin each feature into 4 bins (equal-population strata in test2017).
+3. Sample proportionally from each of the 16 cells, seed=42. With test2017 having ~equal
+   populations per cell by construction, each cell contributes ~62 images.
+4. Cache the per-image features to `data/raw/coco2017/test2017_features.npz` so re-runs are
+   instant.
+
+Why these two features: for **colorization specifically**, per-image PSNR/SSIM/LPIPS varies
+strongly with scene brightness (the L channel structure) and scene saturation (the ab channel
+target distribution), so stratifying on them removes the dominant between-stratum variance.
+Image aspect ratio and category are weaker confounders and are not used.
+
+`tools/download_coco.py --benchmark-strategy random` falls back to pure random sampling for
+ablation purposes.
+
+**Reporting uncertainty — bootstrap 95% CIs:**
+
+Both `tools/evaluate_deep.py` and `tools/compare_methods.py` report PSNR, SSIM, and LPIPS as
+**mean + bootstrap 95% percentile CI** (10,000 resamples of the per-image metric values,
+seed=42). This converts point estimates into defensible interval estimates at zero extra GPU
+cost. The CIs are saved into the aggregate JSON (`{metric}_ci_lo`, `{metric}_ci_hi`) and
+printed at the end of each run.
 
 ---
 
@@ -407,6 +479,7 @@ pytest tests/ -v --timeout=60
 - Log all experiments to MLflow
 - Use the unified `colorize()` API for all model comparisons
 - Keep `config.yaml` as the single source of truth for hyperparameters
+- Keep evaluation strictly on the test2017-derived `benchmark/` directory — never evaluate on val2017 (that set is used for in-training validation and would leak)
 - Save checkpoints to `models/deep_learning/`
 - Save results to `results/deep_learning/`
 
@@ -423,7 +496,7 @@ pytest tests/ -v --timeout=60
 - Add scribble or example-based method code to this branch
 - Build a demo API on this branch (postponed to post-merge on `main`)
 - Commit `main.pdf` without recompiling from source (always compile from `.tex`)
-- Delete or overwrite the `documents/` reference papers
+- Delete or overwrite the `references/` reference papers
 - Store API keys or secrets outside `.env`
 - Commit model weights or dataset files to git
 - Use DDColor or other transformer-based models (not in our 4 categories)
@@ -435,7 +508,7 @@ pytest tests/ -v --timeout=60
 
 This branch is ready to merge into `main` when ALL of the following are true:
 
-- [ ] **Data:** COCO 2017 downloaded with 500-image benchmark subset
+- [ ] **Data:** COCO 2017 train2017 + val2017 + test2017 extracted; 1,000-image benchmark subset built from test2017 (seed=42)
 - [ ] **Pretrained weights:** Zhang16 ECCV weights downloaded
 - [ ] **Fine-tuning:** Zhang16 fine-tuned on COCO 2017, best checkpoint saved
 - [ ] **Evaluation — Zhang16 Pretrained:** PSNR, SSIM, LPIPS computed on benchmark

@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.deep_learning.utils import load_config, compute_metrics, visualize_result, rgb_to_lab, lab_to_rgb
 from src.deep_learning.colorizer import DeepColorizer
+from src.deep_learning.stats import bootstrap_ci, format_metric
 
 
 def evaluate(colorizer, test_dir, output_dir, max_images=None):
@@ -132,33 +133,38 @@ def main():
         for r in results:
             writer.writerow({k: r.get(k, "") for k in fieldnames})
 
-    # Compute aggregate metrics
-    aggregate = {
-        "num_images": len(results),
-        "psnr_mean": float(np.mean([r["psnr"] for r in results])),
-        "psnr_std": float(np.std([r["psnr"] for r in results])),
-        "ssim_mean": float(np.mean([r["ssim"] for r in results])),
-        "ssim_std": float(np.std([r["ssim"] for r in results])),
-        "avg_time_sec": float(np.mean([r["elapsed_sec"] for r in results])),
-    }
-    if "lpips" in results[0]:
-        aggregate["lpips_mean"] = float(np.mean([r["lpips"] for r in results]))
-        aggregate["lpips_std"] = float(np.std([r["lpips"] for r in results]))
+    # Compute aggregate metrics with bootstrap 95% CIs (10k resamples, seed=42)
+    aggregate = {"num_images": len(results)}
+    for metric in ("psnr", "ssim", "lpips"):
+        vals = [r[metric] for r in results if metric in r and r[metric] is not None]
+        if not vals:
+            continue
+        ci = bootstrap_ci(vals, ci=0.95, n_boot=10000, seed=42)
+        aggregate[f"{metric}_mean"]  = ci["mean"]
+        aggregate[f"{metric}_std"]   = ci["std"]
+        aggregate[f"{metric}_ci_lo"] = ci["ci_lo"]
+        aggregate[f"{metric}_ci_hi"] = ci["ci_hi"]
+    aggregate["ci_level"]   = 0.95
+    aggregate["n_bootstrap"] = 10000
+    aggregate["avg_time_sec"] = float(np.mean([r["elapsed_sec"] for r in results]))
 
     # Save aggregate
     json_path = os.path.join(output_dir, "aggregate_metrics.json")
     with open(json_path, "w") as f:
         json.dump(aggregate, f, indent=2)
 
-    # Print summary
-    print(f"\n{'='*50}")
-    print(f"Evaluation Results ({aggregate['num_images']} images)")
-    print(f"{'='*50}")
-    print(f"PSNR:  {aggregate['psnr_mean']:.2f} +/- {aggregate['psnr_std']:.2f}")
-    print(f"SSIM:  {aggregate['ssim_mean']:.4f} +/- {aggregate['ssim_std']:.4f}")
-    if "lpips_mean" in aggregate:
-        print(f"LPIPS: {aggregate['lpips_mean']:.4f} +/- {aggregate['lpips_std']:.4f}")
-    print(f"Avg time: {aggregate['avg_time_sec']:.3f}s/image")
+    # Print summary with CIs
+    print(f"\n{'='*60}")
+    print(f"Evaluation Results ({aggregate['num_images']} images, "
+          f"95% bootstrap CI, n_boot=10,000)")
+    print(f"{'='*60}")
+    for metric, prec, fmt in (("psnr", 2, "PSNR"), ("ssim", 4, "SSIM"), ("lpips", 4, "LPIPS")):
+        if f"{metric}_mean" in aggregate:
+            print(f"  {fmt:<6} {aggregate[f'{metric}_mean']:.{prec}f}  "
+                  f"[95% CI {aggregate[f'{metric}_ci_lo']:.{prec}f}, "
+                  f"{aggregate[f'{metric}_ci_hi']:.{prec}f}]  "
+                  f"(std {aggregate[f'{metric}_std']:.{prec}f})")
+    print(f"  Avg time: {aggregate['avg_time_sec']:.3f} s/image")
     print(f"\nResults saved to: {output_dir}")
 
     # MLflow logging

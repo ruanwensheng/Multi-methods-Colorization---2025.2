@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-04-13
+> **Last updated:** 2026-05-19 — benchmark moved from 500-img val2017 subset to 1,000-img test2017 subset (SPEC §6.3).
 
 ---
 
@@ -26,9 +26,9 @@
 
 ## Phase 1: Data & Weights
 
-- [ ] **T1.1** Download COCO 2017 (train + val + 500 benchmark)
-  - `python tools/download_coco.py --split both --benchmark-size 500`
-  - Verify: ~118K train, ~5K val, 500 benchmark images
+- [x] **T1.1** Download COCO 2017 (train + val + test + 1,000-img benchmark from test2017)
+  - `python tools/download_coco.py --source local-zip --split all --benchmark-size 1000`
+  - Verify: ~118K train, ~5K val, ~40,670 test, 1,000 benchmark (subset of test2017)
 
 - [ ] **T1.2** Download Zhang16 pretrained weights
   - `python tools/download_pretrained.py --model zhang16`

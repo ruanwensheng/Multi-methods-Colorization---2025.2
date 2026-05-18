@@ -1,23 +1,7 @@
-from .model import Zhang16Net
-from .colorizer import DeepColorizer
-from .dataset import ColorizationDataset, get_dataloaders
-from .utils import compute_metrics, visualize_result, rgb_to_lab, lab_to_rgb, load_config
-from .quantize import ABQuantizer
-from .loss import ClassRebalancedCELoss, HuberColorLoss
-from .train import Trainer
+"""Deep learning colorization package.
 
-__all__ = [
-    "Zhang16Net",
-    "DeepColorizer",
-    "ColorizationDataset",
-    "get_dataloaders",
-    "compute_metrics",
-    "visualize_result",
-    "rgb_to_lab",
-    "lab_to_rgb",
-    "load_config",
-    "ABQuantizer",
-    "ClassRebalancedCELoss",
-    "HuberColorLoss",
-    "Trainer",
-]
+Submodules are imported lazily — `from src.deep_learning.X import Y` works
+without triggering imports of unrelated modules. This keeps pure-numpy utilities
+(e.g., src.deep_learning.stats) importable in environments where torch / skimage
+aren't installed yet.
+"""

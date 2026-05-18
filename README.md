@@ -46,8 +46,10 @@ pip install -r requirements.txt
 ### Run the Pipeline
 
 ```bash
-# 1. Download COCO 2017 dataset (~19GB)
-python tools/download_coco.py --split both --benchmark-size 500
+# 1. Download / extract COCO 2017 (~26 GB)
+#    Default source = local-zip (expects data/raw/coco2017/archive.zip from Kaggle).
+#    Also supports --source kaggle (kagglehub) or --source http (cocodataset.org).
+python tools/download_coco.py --source local-zip --split all --benchmark-size 1000
 
 # 2. Download pretrained weights
 python tools/download_pretrained.py --model zhang16
@@ -55,12 +57,12 @@ python tools/download_pretrained.py --model zhang16
 # 3. Fine-tune Zhang16 on COCO 2017
 python tools/train_deep.py --config configs/config.yaml
 
-# 4. Evaluate individual models
+# 4. Evaluate individual models (reports mean + 95% bootstrap CI)
 python tools/evaluate_deep.py --model-path models/pretrained/zhang16_eccv.pth --tag pretrained
 python tools/evaluate_deep.py --model-path models/deep_learning/best_model.pth --tag finetuned
 
 # 5. Compare all 5 models
-python tools/compare_methods.py --max-images 50
+python tools/compare_methods.py --max-images 1000
 
 # 6. View experiment tracking
 mlflow ui  # Opens at http://localhost:5000
@@ -95,6 +97,8 @@ tests/                      # Unit tests (pytest)
 notebooks/
     03_deep_learning_pipeline.ipynb   # Full pipeline walkthrough
     04_method_comparison.ipynb        # 5-model DL comparison
+docs/
+    benchmark_methodology.md          # Why test2017 / stratified sample / bootstrap CIs
 reports/deep_learning/      # LaTeX report (IEEEtran format)
 ```
 
@@ -106,7 +110,13 @@ reports/deep_learning/      # LaTeX report (IEEEtran format)
 | **SSIM** | Structural similarity | Higher |
 | **LPIPS** | Perceptual similarity (learned) | Lower |
 
-All models evaluated on the same **500-image COCO 2017 benchmark** subset (seed=42).
+All models are evaluated on the same **1,000-image COCO 2017 benchmark**, a **stratified
+sample of `test2017` (seed=42)** — never seen during fine-tuning or best-checkpoint selection.
+Stratification is over a 4 × 4 brightness × saturation grid (16 cells, proportional allocation)
+so the benchmark is representative of test2017's color-difficulty distribution rather than
+relying on a single random draw. Reported numbers are **mean + 95% bootstrap CI** (10,000
+percentile resamples, seed=42). Full design rationale and reproduction steps live in
+[`docs/benchmark_methodology.md`](docs/benchmark_methodology.md).
 
 ## Architecture: Zhang16Net
 
