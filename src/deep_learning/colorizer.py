@@ -131,6 +131,11 @@ class DeepColorizer:
         elapsed = time.time() - start
 
         info_dict = {
+            # Unified API §6 keys
+            "method": "deep_learning",
+            "time_seconds": elapsed,
+            "image_size": (orig_h, orig_w),
+            # Extra detail
             "elapsed_sec": elapsed,
             "model_name": type(self.model).__name__,
             "device": str(self.device),
