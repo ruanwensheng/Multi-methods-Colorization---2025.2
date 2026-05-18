@@ -13,6 +13,8 @@ paths:
   models_pretrained: "models/pretrained"
   models_deep: "models/deep_learning"
   results_deep: "results/deep_learning"
+  results_example: "results/example_based"
+  results_scribble: "results/scribble"
 
 # --- Image Settings ---
 image:
