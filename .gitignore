@@ -9,7 +9,9 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-results
+.pytest_cache/
+visualizations/
+per_image_metrics.csv
 
 # Jupyter checkpoints
 .ipynb_checkpoints/

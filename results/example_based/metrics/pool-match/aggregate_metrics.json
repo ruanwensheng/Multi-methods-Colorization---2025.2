@@ -1,0 +1,12 @@
+{
+  "tag": "pool-match",
+  "method": "example_based",
+  "num_images": 500,
+  "psnr_mean": 19.363831909360407,
+  "psnr_std": 3.0708301513466716,
+  "ssim_mean": 0.7230593945720711,
+  "ssim_std": 0.10186831148717033,
+  "avg_time_sec": 0.6559305920600891,
+  "lpips_mean": 0.29266835990548135,
+  "lpips_std": 0.10376335744043849
+}

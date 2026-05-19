@@ -18,7 +18,7 @@ torchinfo==1.8.0
 # --- Computer Vision ---
 opencv-python==4.13.0.92
 scikit-image==0.26.0
-pillow==12.1.1
+pillow==11
 
 # --- Scientific Computing ---
 numpy==2.4.3
@@ -39,6 +39,9 @@ ipywidgets==8.1.8
 
 # --- Testing ---
 pytest==8.3.5
+
+# --- Demo ---
+gradio<6.0
 
 # --- Utilities ---
 tqdm==4.67.3

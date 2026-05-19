@@ -75,13 +75,77 @@ def colorize_scribble(editor_data):
         return None, f"Error: {e}"
 
 
+# ── Example-based: swatch color definitions ──────────────────────────────────
+# Each tuple: (name, hex_for_brush, rgb_for_detection) — must stay in sync.
+_SWATCH_COLORS = [
+    ("red",    "#DC3232", (220,  50,  50)),
+    ("green",  "#32B432", ( 50, 180,  50)),
+    ("blue",   "#3232DC", ( 50,  50, 220)),
+    ("yellow", "#DCC832", (220, 200,  50)),
+]
+_SWATCH_TOLERANCE = 60  # max Euclidean RGB distance to match a painted pixel
+
+
+def _extract_color_mask(layers, target_rgb):
+    """Return (H, W) bool mask of pixels painted with target_rgb (within tolerance)."""
+    mask = None
+    for layer in (layers or []):
+        if layer is None:
+            continue
+        arr = np.array(layer)
+        if arr.ndim < 3 or arr.shape[2] < 4:
+            continue
+        alpha = arr[:, :, 3] > 0
+        dist = np.sqrt(np.sum(
+            (arr[:, :, :3].astype(np.int32) - np.array(target_rgb)) ** 2, axis=2
+        ))
+        hit = alpha & (dist < _SWATCH_TOLERANCE)
+        mask = hit if mask is None else (mask | hit)
+    return mask
+
+
+def _parse_swatch_pairs(editor_t, editor_r):
+    """Extract (target_mask, ref_mask) pairs from two ImageEditor outputs."""
+    tgt_layers = (editor_t or {}).get("layers", [])
+    ref_layers = (editor_r or {}).get("layers", [])
+    swatches = []
+    for _, _, rgb in _SWATCH_COLORS:
+        tm = _extract_color_mask(tgt_layers, rgb)
+        rm = _extract_color_mask(ref_layers, rgb)
+        if tm is not None and rm is not None and tm.any() and rm.any():
+            swatches.append((tm, rm))
+    return swatches
+
+
 def colorize_example(gray_image: np.ndarray, reference_image: np.ndarray):
+    """Mode 1 — automatic global matching."""
     if gray_image is None or reference_image is None:
         return None, "Please upload both a grayscale image and a color reference image."
     try:
         colorizer = _load_example_colorizer()
         result, info = colorizer.colorize(gray_image, reference_image)
         return result, f"Time: {info['time_seconds']:.2f}s"
+    except Exception as e:
+        return None, f"Error: {e}"
+
+
+def colorize_example_swatch(editor_t, editor_r):
+    """Mode 2 — user-guided swatch matching."""
+    if editor_t is None or editor_r is None:
+        return None, "Please upload both images and draw swatch regions."
+    try:
+        bg_t = editor_t.get("background")
+        bg_r = editor_r.get("background")
+        if bg_t is None or bg_r is None:
+            return None, "No background image found. Upload images first."
+        gray_image = np.array(bg_t)
+        reference_image = np.array(bg_r)
+        swatches = _parse_swatch_pairs(editor_t, editor_r)
+        colorizer = _load_example_colorizer()
+        result, info = colorizer.colorize(gray_image, reference_image,
+                                          swatches=swatches or None)
+        note = f"{len(swatches)} swatch pair(s)" if swatches else "no swatches — fell back to auto"
+        return result, f"Time: {info['time_seconds']:.2f}s | {note}"
     except Exception as e:
         return None, f"Error: {e}"
 
@@ -135,19 +199,49 @@ with gr.Blocks(title="Image Colorization — CV 2025.2") as demo:
 
     with gr.Tab("Example-based"):
         gr.Markdown("### Welsh 2002 — transfer color from a reference image")
-        with gr.Row():
-            with gr.Column():
-                ex_gray = gr.Image(label="Grayscale Target", type="numpy")
-                ex_ref = gr.Image(label="Color Reference", type="numpy")
-                ex_btn = gr.Button("Colorize", variant="primary")
-            with gr.Column():
-                ex_output = gr.Image(label="Colorized Result", type="numpy")
-                ex_info = gr.Textbox(label="Info", interactive=False)
-        ex_btn.click(
-            colorize_example,
-            inputs=[ex_gray, ex_ref],
-            outputs=[ex_output, ex_info],
-        )
+
+        with gr.Tab("Mode 1 — Auto"):
+            gr.Markdown("Automatic global matching. Every target pixel searches the entire reference.")
+            with gr.Row():
+                with gr.Column():
+                    ex_gray = gr.Image(label="Grayscale Target", type="numpy")
+                    ex_ref = gr.Image(label="Color Reference", type="numpy")
+                    ex_btn = gr.Button("Colorize", variant="primary")
+                with gr.Column():
+                    ex_output = gr.Image(label="Colorized Result", type="numpy")
+                    ex_info = gr.Textbox(label="Info", interactive=False)
+            ex_btn.click(colorize_example, inputs=[ex_gray, ex_ref],
+                         outputs=[ex_output, ex_info])
+
+        with gr.Tab("Mode 2 — Swatch (user-guided)"):
+            gr.Markdown(
+                "Draw the **same brush color** on corresponding regions in both images.  \n"
+                "Each color defines one swatch pair — target pixels in that region will only "
+                "match against the paired reference region.  \n"
+                "🔴 Red · 🟢 Green · 🔵 Blue · 🟡 Yellow  *(up to 4 pairs)*"
+            )
+            _brush = gr.Brush(
+                colors=["#DC3232", "#32B432", "#3232DC", "#DCC832"],
+                default_size=14,
+            )
+            with gr.Row():
+                with gr.Column():
+                    ex2_gray = gr.ImageEditor(
+                        label="Grayscale Target — draw region masks",
+                        type="numpy",
+                        brush=_brush,
+                    )
+                    ex2_ref = gr.ImageEditor(
+                        label="Color Reference — draw matching masks",
+                        type="numpy",
+                        brush=_brush,
+                    )
+                    ex2_btn = gr.Button("Colorize with Swatches", variant="primary")
+                with gr.Column():
+                    ex2_output = gr.Image(label="Colorized Result", type="numpy")
+                    ex2_info = gr.Textbox(label="Info", interactive=False)
+            ex2_btn.click(colorize_example_swatch, inputs=[ex2_gray, ex2_ref],
+                          outputs=[ex2_output, ex2_info])
 
 
 if __name__ == "__main__":

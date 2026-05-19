@@ -100,7 +100,11 @@ src/example_based/
 └── utils.py             # lab conversions, neighborhood statistics
 ```
 
-**Unified API:** `ExampleColorizer.colorize(gray_image, reference_image)` — both inputs are `(H, W, 3)` BGR. Returns `(colorized_bgr, info_dict)`. See §6.
+**Two modes (both supported in the demo):**
+- **Mode 1 — Automatic (global matching):** KD-tree searches entire reference image. Current implementation. *(Priority: Phase 1)*
+- **Mode 2 — User-guided (swatch matching):** User marks corresponding regions on target and reference; pixels inside each target region only match against their paired reference region. *(Priority: Phase 2 — demo polish)*
+
+**Unified API:** `ExampleColorizer.colorize(gray_image, reference_image, swatches=None)` — both image inputs are `(H, W, 3)` BGR. `swatches` is an optional list of `(target_mask, ref_mask)` pairs (each `(H, W)` bool arrays); if `None`, falls back to Mode 1. Returns `(colorized_bgr, info_dict)`. See §6.
 
 **Key config keys (`example_based:` in config.yaml):** `neighborhood_size` (default 5 — NxN window for std), `k_neighbors` (default 5 — KD-tree candidates), `downsample` (default 0.5 — resize reference for speed).
 
@@ -231,6 +235,8 @@ app/
 - Input 1: grayscale target image
 - Input 2: color reference image
 - Output: colorized image
+- **Mode 1 (Phase 1):** Auto global matching — single "Colorize" button, no extra input
+- **Mode 2 (Phase 2):** User-guided swatch matching — user draws region masks on both images via `gr.ImageEditor`, system restricts KD-tree search per region pair
 
 ---
 
