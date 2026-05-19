@@ -6,6 +6,8 @@ services:
     volumes:
       - ..:/workspace
     working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
     ports:
       - "8888:8888"
     stdin_open: true
@@ -19,6 +21,8 @@ services:
     volumes:
       - ..:/workspace
     working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
     ports:
       - "7860:7860"
     command: python app/demo.py

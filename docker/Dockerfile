@@ -17,7 +17,4 @@ RUN pip install --no-cache-dir torch torchvision \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Demo app
-RUN pip install --no-cache-dir "gradio>=4.0,<5.0"
-
 CMD ["bash"]
