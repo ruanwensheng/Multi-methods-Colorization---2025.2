@@ -165,7 +165,6 @@ def main():
                 "image": img_name,
                 "psnr": metrics["psnr"],
                 "ssim": metrics["ssim"],
-                "lpips": metrics.get("lpips", None),
                 "elapsed_sec": elapsed,
             })
 
@@ -208,10 +207,10 @@ def main():
     csv_path = os.path.join(output_dir, "comparison_metrics.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["image", "method", "psnr", "ssim", "lpips", "elapsed_sec"])
+        writer.writerow(["image", "method", "psnr", "ssim", "elapsed_sec"])
         for name, results_list in all_results.items():
             for r in results_list:
-                writer.writerow([r["image"], name, r["psnr"], r["ssim"], r.get("lpips", ""), r["elapsed_sec"]])
+                writer.writerow([r["image"], name, r["psnr"], r["ssim"], r["elapsed_sec"]])
 
     print(f"\nResults saved to: {output_dir}")
 

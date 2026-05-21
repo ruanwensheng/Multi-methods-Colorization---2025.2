@@ -5,7 +5,7 @@ Usage:
     python tools/evaluate_deep.py --model-path models/deep_learning/best_model.pth
     python tools/evaluate_deep.py --test-dir data/raw/coco2017/benchmark
 
-Computes PSNR, SSIM, LPIPS and saves results.
+Computes PSNR, SSIM and saves results.
 """
 
 import os
@@ -123,8 +123,6 @@ def main():
     # Save per-image results CSV
     csv_path = os.path.join(output_dir, "test_metrics.csv")
     fieldnames = ["image", "psnr", "ssim", "elapsed_sec"]
-    if "lpips" in results[0]:
-        fieldnames.append("lpips")
 
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -141,9 +139,7 @@ def main():
         "ssim_std": float(np.std([r["ssim"] for r in results])),
         "avg_time_sec": float(np.mean([r["elapsed_sec"] for r in results])),
     }
-    if "lpips" in results[0]:
-        aggregate["lpips_mean"] = float(np.mean([r["lpips"] for r in results]))
-        aggregate["lpips_std"] = float(np.std([r["lpips"] for r in results]))
+
 
     # Save aggregate
     json_path = os.path.join(output_dir, "aggregate_metrics.json")

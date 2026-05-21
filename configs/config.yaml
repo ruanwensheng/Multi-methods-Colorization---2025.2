@@ -93,7 +93,7 @@ deep_learning:
 
 # --- Evaluation ---
 evaluation:
-  metrics: ["psnr", "ssim", "lpips"]
+  metrics: ["psnr", "ssim"]
 
 # --- Device ---
 device: "auto"  # "auto", "cuda", or "cpu"

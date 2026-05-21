@@ -148,8 +148,6 @@ def main():
 
     # Per-image CSV
     fieldnames = ["image", "psnr", "ssim", "time_seconds"]
-    if "lpips" in results[0]:
-        fieldnames.append("lpips")
 
     csv_path = os.path.join(output_dir, "per_image_metrics.csv")
     with open(csv_path, "w", newline="") as f:
@@ -169,9 +167,7 @@ def main():
         "ssim_std": float(np.std([r["ssim"] for r in results])),
         "avg_time_sec": float(np.mean([r["time_seconds"] for r in results])),
     }
-    if "lpips" in results[0]:
-        aggregate["lpips_mean"] = float(np.mean([r["lpips"] for r in results]))
-        aggregate["lpips_std"] = float(np.std([r["lpips"] for r in results]))
+
 
     json_path = os.path.join(output_dir, "aggregate_metrics.json")
     with open(json_path, "w") as f:
@@ -182,8 +178,6 @@ def main():
     print(f"{'=' * 50}")
     print(f"PSNR:     {aggregate['psnr_mean']:.2f} ± {aggregate['psnr_std']:.2f}")
     print(f"SSIM:     {aggregate['ssim_mean']:.4f} ± {aggregate['ssim_std']:.4f}")
-    if "lpips_mean" in aggregate:
-        print(f"LPIPS:    {aggregate['lpips_mean']:.4f} ± {aggregate['lpips_std']:.4f}")
     print(f"Avg time: {aggregate['avg_time_sec']:.3f} s/image")
     print(f"\nResults saved to: {output_dir}")
 

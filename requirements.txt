@@ -12,7 +12,6 @@
 
 # --- Deep Learning ---
 # torch and torchvision: install with CUDA separately (see above)
-lpips==0.1.4
 torchinfo==1.8.0
 
 # --- Computer Vision ---

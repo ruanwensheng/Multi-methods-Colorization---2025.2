@@ -141,10 +141,10 @@ def build_benchmark_to_ref(benchmark_dir, pool_paths, pool_dir):
 # Oracle scribbles
 # ---------------------------------------------------------------------------
 
-def generate_oracle_scribbles(benchmark_dir, scribble_dir, sample_rate=0.01, seed=42):
+def generate_oracle_scribbles(benchmark_dir, scribble_dir, sample_rate=0.10, seed=42):
     """Generate BGRA oracle scribble overlays for the scribble-based method.
 
-    For each benchmark color image, randomly samples ~1 % of pixels (seed=42),
+    For each benchmark color image, randomly samples ~10 % of pixels (seed=42),
     marks them with their true BGR colour and alpha=255.  The rest is transparent.
     """
     os.makedirs(scribble_dir, exist_ok=True)
@@ -159,8 +159,6 @@ def generate_oracle_scribbles(benchmark_dir, scribble_dir, sample_rate=0.01, see
 
     for fname in tqdm(images, desc="Oracle scribbles"):
         out_path = os.path.join(scribble_dir, os.path.splitext(fname)[0] + ".png")
-        if os.path.exists(out_path):
-            continue
 
         img = cv2.imread(os.path.join(benchmark_dir, fname))
         if img is None:

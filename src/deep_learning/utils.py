@@ -87,18 +87,6 @@ def denormalize_ab(ab_norm):
     return ab_norm * 110.0
 
 
-_lpips_model = None
-
-
-def _get_lpips_fn():
-    """Get or create a singleton LPIPS model (avoids reloading weights per call)."""
-    global _lpips_model
-    if _lpips_model is None:
-        import lpips
-        _lpips_model = lpips.LPIPS(net="alex", verbose=False)
-    return _lpips_model
-
-
 def compute_metrics(predicted_rgb, ground_truth_rgb):
     """Compute image quality metrics between predicted and ground truth.
 
@@ -107,7 +95,7 @@ def compute_metrics(predicted_rgb, ground_truth_rgb):
         ground_truth_rgb: np.ndarray (H, W, 3) uint8 RGB image.
 
     Returns:
-        dict with keys: "psnr", "ssim", and optionally "lpips".
+        dict with keys: "psnr", "ssim".
     """
     metrics = {}
 
@@ -120,25 +108,6 @@ def compute_metrics(predicted_rgb, ground_truth_rgb):
     metrics["ssim"] = float(structural_similarity(
         ground_truth_rgb, predicted_rgb, channel_axis=2, data_range=255
     ))
-
-    # LPIPS (optional - requires lpips package)
-    try:
-        import torch
-        import lpips
-
-        loss_fn = _get_lpips_fn()
-
-        def _to_tensor(img):
-            t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
-            t = t * 2 - 1  # scale to [-1, 1]
-            return t.unsqueeze(0)
-
-        with torch.no_grad():
-            pred_t = _to_tensor(predicted_rgb)
-            gt_t = _to_tensor(ground_truth_rgb)
-            metrics["lpips"] = float(loss_fn(pred_t, gt_t).item())
-    except ImportError:
-        pass  # lpips not installed, skip
 
     return metrics
 
