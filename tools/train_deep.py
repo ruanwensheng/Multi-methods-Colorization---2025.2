@@ -24,7 +24,7 @@ except ImportError:
 
 from src.deep_learning.utils import load_config, get_device
 from src.deep_learning.quantize import ABQuantizer
-from src.deep_learning.model import build_model
+from src.deep_learning.model import build_model, Zhang16Net, load_zhang16_eccv_weights
 from src.deep_learning.loss import build_loss
 from src.deep_learning.dataset import get_dataloaders
 from src.deep_learning.train import Trainer
@@ -72,12 +72,19 @@ def main():
     pretrained_path = dl_cfg.get("pretrained_weights")
     if pretrained_path and os.path.exists(pretrained_path):
         try:
-            checkpoint = torch.load(pretrained_path, map_location=device, weights_only=False)
-            if "model_state_dict" in checkpoint:
-                model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+            if isinstance(model, Zhang16Net):
+                summary = load_zhang16_eccv_weights(model, pretrained_path, device=device)
+                print(
+                    f"Loaded {summary['loaded']} weight keys from {pretrained_path}; "
+                    f"dropped {len(summary['dropped'])}, missing {len(summary['missing'])} "
+                    f"(head + any architecture-mismatched layers stay random-init)."
+                )
             else:
-                model.load_state_dict(checkpoint, strict=False)
-            print(f"Loaded pretrained weights from {pretrained_path}")
+                # Fallback for non-Zhang16Net architectures: legacy strict=False load.
+                checkpoint = torch.load(pretrained_path, map_location=device, weights_only=False)
+                sd = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+                model.load_state_dict(sd, strict=False)
+                print(f"Loaded pretrained weights from {pretrained_path}")
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
 

@@ -312,3 +312,96 @@ def build_model(cfg, quantizer=None):
         else:
             num_classes = dl_cfg.get("num_classes", 313)
         return Zhang16Net(num_classes=num_classes)
+
+
+def remap_zhang16_eccv_state_dict(src_state_dict, target_state_dict):
+    """Adapt an official Zhang 2016 ECCV checkpoint to our Zhang16Net.
+
+    The upstream checkpoint at
+    https://colorizers.s3.us-east-2.amazonaws.com/colorization_release_v2-9b330a0b.pth
+    names its Sequential blocks `model1`..`model8`, while our Zhang16Net uses
+    `conv1`..`conv8`. Additionally, the official `conv8` has 7 layers (output
+    at index 6, 313 bins) while ours has 5 (output at index 4, typically 233
+    bins from `pts_in_hull.npy`). The renamer therefore:
+
+      1. Renames `modelN.X.Y` -> `convN.X.Y`.
+      2. Drops any renamed key that is absent from the target or has a
+         shape mismatch with the target tensor.
+
+    This means encoder blocks (conv1..conv7) transfer cleanly, the upsample
+    + first conv of conv8 transfer, and the output head + the extra layer
+    our architecture omits are skipped — which is the expected and correct
+    behaviour for "fine-tune from pretrained encoder, retrain head".
+
+    Args:
+        src_state_dict: dict from the official checkpoint (already unwrapped
+            from any `model_state_dict` envelope).
+        target_state_dict: dict from `model.state_dict()`. Used to look up
+            target keys and shapes; values are not modified.
+
+    Returns:
+        (remapped, dropped) tuple.
+        - `remapped`: dict in the target's naming, safe to pass to
+          `load_state_dict(remapped, strict=False)`.
+        - `dropped`: list of original source keys that couldn't be loaded,
+          each tagged with the reason (`"<key> (missing in target)"` or
+          `"<key> (shape mismatch: src=<s> target=<t>)"`).
+    """
+    remapped = {}
+    dropped = []
+    for src_key, src_val in src_state_dict.items():
+        if not src_key.startswith("model"):
+            dropped.append(f"{src_key} (not a Zhang16 modelN.* key)")
+            continue
+        # `model1.0.weight` -> `conv1.0.weight`
+        target_key = "conv" + src_key[len("model"):]
+        if target_key not in target_state_dict:
+            dropped.append(f"{src_key} (missing in target as {target_key})")
+            continue
+        target_val = target_state_dict[target_key]
+        if hasattr(src_val, "shape") and hasattr(target_val, "shape"):
+            if src_val.shape != target_val.shape:
+                dropped.append(
+                    f"{src_key} (shape mismatch: src={tuple(src_val.shape)} "
+                    f"target={tuple(target_val.shape)})"
+                )
+                continue
+        remapped[target_key] = src_val
+    return remapped, dropped
+
+
+def load_zhang16_eccv_weights(model, checkpoint_path, device="cpu"):
+    """Load an official Zhang 2016 ECCV checkpoint into a Zhang16Net.
+
+    Convenience wrapper: reads the checkpoint, unwraps the common
+    `model_state_dict` envelope, remaps keys via `remap_zhang16_eccv_state_dict`,
+    and calls `load_state_dict(..., strict=False)`. Prints a summary so
+    the caller (training script, evaluator) can see what transferred.
+
+    Args:
+        model: Zhang16Net (or any module with `state_dict()` / `load_state_dict()`).
+        checkpoint_path: Path to the .pth file.
+        device: Where to map tensors during torch.load.
+
+    Returns:
+        dict with keys:
+          - "loaded":   number of keys that transferred
+          - "dropped":  list of (src_key, reason) tuples
+          - "missing":  list of target keys that received no value
+                        (these will be randomly initialized in the model)
+    """
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    src_sd = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
+    target_sd = model.state_dict()
+    remapped, dropped = remap_zhang16_eccv_state_dict(src_sd, target_sd)
+    missing_keys, unexpected_keys = model.load_state_dict(remapped, strict=False)
+    if unexpected_keys:
+        raise RuntimeError(
+            "remap_zhang16_eccv_state_dict produced unexpected keys; "
+            f"this should be impossible by construction: {unexpected_keys}"
+        )
+    return {
+        "loaded": len(remapped),
+        "dropped": dropped,
+        "missing": list(missing_keys),
+    }
