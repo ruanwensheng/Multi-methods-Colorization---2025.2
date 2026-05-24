@@ -1,26 +1,27 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-19 — benchmark moved from 500-img val2017 subset to 1,000-img test2017 subset (SPEC §6.3).
+> **Last updated:** 2026-05-24 — Phase 0 + Phase 1 complete; ready for Phase 2 (training).
 
 ---
 
 ## Phase 0: Verify & Fix (Foundation)
 
-- [ ] **T0.1** Run unit tests, fix any failures
+- [x] **T0.1** Run unit tests, fix any failures
   - `pytest tests/ -v --timeout=60`
-  - All tests green (0 failures, 0 errors)
+  - All tests green (113 passed, 0 failures) — includes 9 new guard tests added in T0.2 / T0.3
 
-- [ ] **T0.2** Clean config.yaml and requirements.txt
-  - config.yaml: remove scribble/example sections, keep only DL settings
-  - requirements.txt: remove fastapi/uvicorn, fix character-encoding issue
-  - Verify num_classes consistency with pts_in_hull.npy
+- [x] **T0.2** Clean config.yaml and requirements.txt
+  - config.yaml: removed scribble/example_based sections; only DL settings remain
+  - requirements.txt: already clean (no fastapi/uvicorn, no encoding artifacts) — no change needed
+  - Added guard tests: `test_no_scribble_or_example_sections`, `test_only_expected_top_level_keys`
 
-- [ ] **T0.3** Rewrite notebook 04 for 5-model DL comparison
-  - Replace cross-method content (scribble/example/DL)
-  - New content: 5-model DL comparison (Zhang16 Pretrained/Fine-tuned, Zhang17, DeOldify, ControlNet)
+- [x] **T0.3** Rewrite notebook 04 for 5-model DL comparison
+  - Replaced cross-method content (scribble/example/DL) with 5-model DL comparison scaffold
+  - Cells load from `results/deep_learning/comparison/`, gracefully no-op until Phase 4 produces artifacts
+  - Added `tests/test_notebook_04.py` (7 structural + content guards)
 
-**CHECKPOINT 0** — [ ] Tests green, config clean, notebook 04 corrected
+**CHECKPOINT 0** — [x] Tests green, config clean, notebook 04 corrected
 
 ---
 
@@ -28,13 +29,13 @@
 
 - [x] **T1.1** Download COCO 2017 (train + val + test + 1,000-img benchmark from test2017)
   - `python tools/download_coco.py --source local-zip --split all --benchmark-size 1000`
-  - Verify: ~118K train, ~5K val, ~40,670 test, 1,000 benchmark (subset of test2017)
+  - Verified: val2017 = 5,000, test2017 = 40,670, benchmark = 1,000 (subset of test2017)
 
-- [ ] **T1.2** Download Zhang16 pretrained weights
+- [x] **T1.2** Download Zhang16 pretrained weights
   - `python tools/download_pretrained.py --model zhang16`
-  - Verify: `models/pretrained/zhang16_eccv.pth` exists
+  - Verified: `models/pretrained/zhang16_eccv.pth` (123 MB), `models/pretrained/zhang16_siggraph.pth` (130.5 MB)
 
-**CHECKPOINT 1** — [ ] Data and weights in place
+**CHECKPOINT 1** — [x] Data and weights in place
 
 ---
 
