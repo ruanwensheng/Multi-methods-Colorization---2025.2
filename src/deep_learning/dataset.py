@@ -99,6 +99,13 @@ def get_dataloaders(cfg):
 
     coco_dir = paths_cfg["data_coco"]
 
+    # persistent_workers keeps DataLoader workers alive across epochs — on Windows
+    # the process-spawn cost is non-trivial and dominates short epochs.
+    # prefetch_factor>=2 lets each worker queue batches ahead of the train loop,
+    # hiding the JPEG-decode + skimage rgb2lab latency behind GPU work.
+    persistent_workers = num_workers > 0
+    prefetch_factor = 2 if num_workers > 0 else None
+
     loaders = {}
     for split, augment in [("train2017", True), ("val2017", False), ("benchmark", False)]:
         split_dir = os.path.join(coco_dir, split)
@@ -108,14 +115,17 @@ def get_dataloaders(cfg):
                 input_size=input_size,
                 augment=augment,
             )
-            loaders[split] = DataLoader(
-                dataset,
+            kwargs = dict(
                 batch_size=batch_size,
                 shuffle=(split == "train2017"),
                 num_workers=num_workers,
                 pin_memory=pin_memory,
                 drop_last=(split == "train2017"),
+                persistent_workers=persistent_workers,
             )
+            if prefetch_factor is not None:
+                kwargs["prefetch_factor"] = prefetch_factor
+            loaders[split] = DataLoader(dataset, **kwargs)
         else:
             loaders[split] = None
 

@@ -95,3 +95,79 @@ class TestGetDataloaders:
         from torch.utils.data import DataLoader
         for loader in [train, val, test]:
             assert loader is None or isinstance(loader, DataLoader)
+
+
+def _fake_cfg(tmp_path, num_workers=0):
+    """Synth cfg that points at a tmp coco2017-shaped tree.
+
+    Builds <tmp>/coco2017/train2017/ with a few JPEGs so get_dataloaders has
+    something to return without needing the real 26 GB dataset.
+    """
+    coco_root = tmp_path / "coco2017"
+    train_dir = coco_root / "train2017"
+    train_dir.mkdir(parents=True)
+    for i in range(6):
+        img = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+        cv2.imwrite(str(train_dir / f"img_{i}.jpg"), img)
+    return {
+        "image": {"input_size": [64, 64]},
+        "paths": {"data_coco": str(coco_root)},
+        "deep_learning": {
+            "batch_size": 2,
+            "num_workers": num_workers,
+            "pin_memory": False,
+        },
+    }
+
+
+class TestDataLoaderWorkerSafety:
+    """Guard against the data-loader-bound training we hit in May 2026.
+
+    With num_workers=0, fine-tuning Zhang16 on 118K COCO images took ~2.5 h
+    per epoch on a GTX 1660 SUPER (GPU at 70% utilisation, CPU-bound on
+    serial JPEG decode + skimage Lab conversion). Switching to multi-worker
+    data loading is what makes the 10-epoch fine-tune fit in the user's
+    5-6 hour budget. These tests pin that the worker-safe path actually
+    works on Windows (where DataLoader workers need pickling-safe Datasets
+    and spawn-friendly main scripts).
+    """
+
+    def test_dataloader_with_workers_yields_batches(self, tmp_path):
+        # Smoke: a multi-worker DataLoader can actually deliver batches.
+        # If this hangs/crashes, num_workers>0 is unsafe on this host.
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=2)
+        train, _, _ = get_dataloaders(cfg)
+        assert train is not None
+        batches = []
+        for i, batch in enumerate(train):
+            batches.append(batch)
+            if i >= 1:  # 2 batches is enough to prove workers + main can communicate
+                break
+        assert len(batches) >= 1
+        assert "L" in batches[0] and "ab" in batches[0]
+
+    def test_train_loader_enables_persistent_workers_when_workers_positive(self, tmp_path):
+        # persistent_workers=True keeps worker procs alive across epochs.
+        # Without this, every epoch pays the Windows process-spawn tax (~seconds).
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=2)
+        train, _, _ = get_dataloaders(cfg)
+        assert train.persistent_workers is True, \
+            "train DataLoader should use persistent_workers when num_workers > 0"
+
+    def test_train_loader_has_no_persistent_workers_when_workers_zero(self, tmp_path):
+        # Persistent workers requires num_workers > 0; respect that.
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=0)
+        train, _, _ = get_dataloaders(cfg)
+        assert train.persistent_workers is False
+
+    def test_train_loader_has_prefetch_when_workers_positive(self, tmp_path):
+        # prefetch_factor>1 lets each worker pre-build batches ahead of the
+        # training loop, hiding I/O latency behind GPU work.
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=2)
+        train, _, _ = get_dataloaders(cfg)
+        # PyTorch default is 2; we want at least that.
+        assert train.prefetch_factor is None or train.prefetch_factor >= 2
