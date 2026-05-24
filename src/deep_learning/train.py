@@ -87,6 +87,10 @@ class Trainer:
         # Tracking
         self.best_val_loss = float("inf")
         self.history = {"train_loss": [], "val_loss": [], "val_psnr": [], "val_ssim": []}
+        # Number of epochs completed before this fit() call — set by load_checkpoint().
+        # Used to offset the epoch counter so MLflow step numbers stay monotonic
+        # across multi-session resumed training (1 epoch/session on slow GPUs).
+        self.completed_epochs = 0
 
         # Paths
         self.save_dir = cfg["paths"].get("models_deep", "models/deep_learning")
@@ -192,18 +196,30 @@ class Trainer:
     def fit(self, num_epochs=None):
         """Full training loop with MLflow logging.
 
+        Honors ``self.completed_epochs`` (set by ``load_checkpoint``) so the
+        global epoch counter is monotonic across resumed sessions — useful
+        for ``--epochs 1`` runs that resume the previous checkpoint to do one
+        more epoch at a time.
+
         Args:
-            num_epochs: Number of epochs to train. If None, uses config value.
+            num_epochs: Number of NEW epochs to train this call. If None,
+                uses the config value.
         """
         if num_epochs is None:
             num_epochs = self.cfg["deep_learning"]["epochs"]
 
-        print(f"Training on {self.device} for {num_epochs} epochs")
+        start_epoch = self.completed_epochs
+        total_epochs = start_epoch + num_epochs
+
+        if start_epoch > 0:
+            print(f"Resuming from epoch {start_epoch} -> training epochs {start_epoch + 1}..{total_epochs}")
+        print(f"Training on {self.device} for {num_epochs} epoch(s) this run")
         print(f"Loss: {self.loss_type} | AMP: {self.use_amp}")
         if self.train_loader:
             print(f"Train batches: {len(self.train_loader)} | Batch size: {self.cfg['deep_learning']['batch_size']}")
 
-        for epoch in range(1, num_epochs + 1):
+        for local_epoch in range(1, num_epochs + 1):
+            epoch = start_epoch + local_epoch
             start = time.time()
 
             # Train
@@ -224,7 +240,7 @@ class Trainer:
             lr = self.optimizer.param_groups[0]["lr"]
 
             print(
-                f"Epoch {epoch}/{num_epochs} | "
+                f"Epoch {epoch}/{total_epochs} | "
                 f"Train Loss: {train_loss:.4f} | "
                 f"Val Loss: {val_loss:.4f} | "
                 f"PSNR: {val_metrics.get('psnr', 0):.2f} | "
@@ -233,7 +249,7 @@ class Trainer:
                 f"Time: {elapsed:.1f}s"
             )
 
-            # MLflow logging
+            # MLflow logging — step=epoch (global) so resumed sessions append
             if mlflow is not None:
                 try:
                     mlflow.log_metrics({
@@ -252,10 +268,13 @@ class Trainer:
                 self.save_checkpoint(os.path.join(self.save_dir, "best_model.pth"), epoch)
                 print(f"  -> Saved best model (val_loss: {val_loss:.4f})")
 
-        # Save final model
-        self.save_checkpoint(os.path.join(self.save_dir, "last_model.pth"), num_epochs)
+            # Track progress for any subsequent call to fit() in the same process
+            self.completed_epochs = epoch
 
-        # Save training history
+        # Save final model
+        self.save_checkpoint(os.path.join(self.save_dir, "last_model.pth"), self.completed_epochs)
+
+        # Save training history (full accumulated history, not just this session)
         history_path = os.path.join(self.save_dir, "training_log.json")
         with open(history_path, "w") as f:
             json.dump(self.history, f, indent=2)
@@ -263,19 +282,47 @@ class Trainer:
         print(f"Training complete. Best val_loss: {self.best_val_loss:.4f}")
 
     def save_checkpoint(self, path, epoch):
-        """Save model checkpoint."""
-        torch.save({
+        """Save model checkpoint, including LR scheduler state and history.
+
+        Including scheduler_state_dict and history lets `--resume` continue
+        the LR schedule cleanly across sessions and accumulate per-epoch
+        training metrics in `training_log.json` instead of overwriting them.
+        """
+        payload = {
             "epoch": epoch,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "best_val_loss": self.best_val_loss,
             "config": self.cfg["deep_learning"],
-        }, path)
+            "history": self.history,
+        }
+        if self.scheduler is not None:
+            payload["scheduler_state_dict"] = self.scheduler.state_dict()
+        torch.save(payload, path)
 
     def load_checkpoint(self, path):
-        """Load model checkpoint."""
+        """Load model checkpoint.
+
+        Restores model + optimizer state, best_val_loss, scheduler state (if
+        present), and per-epoch history (if present). Missing keys are
+        tolerated so legacy checkpoints from earlier runs still load.
+
+        Returns the epoch number stored in the checkpoint (used by fit() to
+        offset the epoch counter for MLflow step numbering).
+        """
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.best_val_loss = checkpoint.get("best_val_loss", float("inf"))
-        return checkpoint.get("epoch", 0)
+        # Restore scheduler (new field; old checkpoints don't have it)
+        if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        # Restore history (new field; old checkpoints don't have it)
+        saved_history = checkpoint.get("history")
+        if isinstance(saved_history, dict):
+            # Merge to keep any default keys the current Trainer expects
+            for k, v in saved_history.items():
+                self.history[k] = list(v)
+        epoch = int(checkpoint.get("epoch", 0))
+        self.completed_epochs = epoch
+        return epoch
