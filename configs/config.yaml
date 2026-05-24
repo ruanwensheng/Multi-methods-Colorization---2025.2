@@ -19,16 +19,6 @@ image:
   input_size: [256, 256]
   color_space: "LAB"
 
-# --- Scribble-based Method ---
-scribble:
-  weight_sigma: 0.1
-  n_neighbors: 8
-
-# --- Example-based Method ---
-example_based:
-  n_superpixels: 200
-  feature_levels: ["low", "mid", "high"]
-
 # --- Deep Learning Method ---
 deep_learning:
   # Architecture (Zhang et al. 2016)

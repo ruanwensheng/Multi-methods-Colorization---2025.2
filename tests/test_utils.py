@@ -139,6 +139,16 @@ class TestLoadConfig:
         assert "deoldify" in comp
         assert "controlnet" in comp
 
+    def test_no_scribble_or_example_sections(self, cfg):
+        # This branch is deep-learning only; scribble/example live on other branches.
+        # See SPEC.md acceptance criteria and CLAUDE.md "Never Do" list.
+        assert "scribble" not in cfg
+        assert "example_based" not in cfg
+
+    def test_only_expected_top_level_keys(self, cfg):
+        expected = {"project", "paths", "image", "deep_learning", "evaluation", "device"}
+        assert set(cfg.keys()) == expected
+
     def test_missing_file_raises(self):
         from src.deep_learning.utils import load_config
         with pytest.raises(FileNotFoundError):
