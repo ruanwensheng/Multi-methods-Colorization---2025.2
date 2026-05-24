@@ -169,3 +169,17 @@ class TestGetDevice:
         from src.deep_learning.utils import get_device
         device = get_device({"device": "cpu"})
         assert device == torch.device("cpu")
+
+    def test_auto_picks_cuda_when_available(self):
+        # Skip on CPU-only setups so this stays portable. On a machine
+        # with a CUDA GPU + cu121 torch wheels, this verifies that
+        # device: "auto" actually lands on cuda (regression guard
+        # against accidental CPU-only torch installs).
+        import torch
+        if not torch.cuda.is_available():
+            pytest.skip("no CUDA device on this host — see CLAUDE.md GPU setup")
+        from src.deep_learning.utils import get_device
+        device = get_device({"device": "auto"})
+        assert device.type == "cuda"
+        # End-to-end: allocating on the chosen device must not raise.
+        torch.zeros(2, 2, device=device)
