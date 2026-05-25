@@ -224,6 +224,43 @@ class _NaNModel(nn.Module):
         return self.forward(L) * 110.0
 
 
+class TestMaxTrainBatches:
+    """Caps batches per epoch so smoke tests don't take 9h on real data."""
+
+    def test_max_train_batches_caps_iteration(self, tiny_cfg, tiny_data_dir, monkeypatch):
+        from src.deep_learning import train as train_module
+
+        tiny_cfg["deep_learning"]["max_train_batches"] = 2
+        trainer = _make_trainer(tiny_cfg, tiny_data_dir)
+
+        calls = []
+        real_clip = torch.nn.utils.clip_grad_norm_
+
+        def spy_clip(params, max_norm, **kw):
+            calls.append(1)
+            return real_clip(params, max_norm, **kw)
+
+        monkeypatch.setattr(train_module.torch.nn.utils, "clip_grad_norm_", spy_clip)
+        trainer.train_epoch(1)
+        # Tiny dataset has 4 batches; cap of 2 must stop after 2.
+        assert len(calls) == 2
+
+    def test_zero_means_unlimited(self, tiny_cfg, tiny_data_dir, monkeypatch):
+        from src.deep_learning import train as train_module
+
+        tiny_cfg["deep_learning"]["max_train_batches"] = 0
+        trainer = _make_trainer(tiny_cfg, tiny_data_dir)
+
+        calls = []
+        real_clip = torch.nn.utils.clip_grad_norm_
+        monkeypatch.setattr(
+            train_module.torch.nn.utils, "clip_grad_norm_",
+            lambda p, n, **kw: (calls.append(1), real_clip(p, n, **kw))[1],
+        )
+        trainer.train_epoch(1)
+        assert len(calls) == 4  # all 4 batches consumed
+
+
 class TestValidateResilientToNaN:
     """validate() must not crash when the model output is NaN.
 

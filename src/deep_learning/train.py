@@ -98,6 +98,8 @@ class Trainer:
         self.nan_patience = int(dl_cfg.get("nan_patience", 5))
         self.log_every_n_batches = int(dl_cfg.get("log_every_n_batches", 50))
         self.checkpoint_every_n_batches = int(dl_cfg.get("checkpoint_every_n_batches", 500))
+        # max_train_batches: 0 = unlimited. Caps batches/epoch for smoke tests.
+        self.max_train_batches = int(dl_cfg.get("max_train_batches", 0))
         self._global_step = 0
 
         # Tracking
@@ -130,6 +132,8 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}", leave=False)
         for batch_idx, batch in enumerate(pbar):
+            if self.max_train_batches and batch_idx >= self.max_train_batches:
+                break
             L = batch["L"].to(self.device)
             ab = batch["ab"].to(self.device)
 

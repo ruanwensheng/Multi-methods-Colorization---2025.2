@@ -40,6 +40,8 @@ def main():
     parser.add_argument("--resume", default=None, help="Resume from checkpoint path")
     parser.add_argument("--experiment-name", default="deep-colorization",
                         help="MLflow experiment name")
+    parser.add_argument("--max-train-batches", type=int, default=None,
+                        help="Cap batches per epoch (0 = no cap). Useful for smoke tests.")
     args = parser.parse_args()
 
     # Load and override config
@@ -52,6 +54,8 @@ def main():
         dl_cfg["batch_size"] = args.batch_size
     if args.lr is not None:
         dl_cfg["learning_rate"] = args.lr
+    if args.max_train_batches is not None:
+        dl_cfg["max_train_batches"] = args.max_train_batches
 
     # Device
     if args.device:

@@ -97,26 +97,30 @@ class TestGetDataloaders:
             assert loader is None or isinstance(loader, DataLoader)
 
 
-def _fake_cfg(tmp_path, num_workers=0):
+def _fake_cfg(tmp_path, num_workers=0, val_num_workers=None, splits=("train2017",)):
     """Synth cfg that points at a tmp coco2017-shaped tree.
 
-    Builds <tmp>/coco2017/train2017/ with a few JPEGs so get_dataloaders has
+    Builds <tmp>/coco2017/<split>/ with a few JPEGs so get_dataloaders has
     something to return without needing the real 26 GB dataset.
     """
     coco_root = tmp_path / "coco2017"
-    train_dir = coco_root / "train2017"
-    train_dir.mkdir(parents=True)
-    for i in range(6):
-        img = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
-        cv2.imwrite(str(train_dir / f"img_{i}.jpg"), img)
+    for split in splits:
+        split_dir = coco_root / split
+        split_dir.mkdir(parents=True)
+        for i in range(6):
+            img = np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8)
+            cv2.imwrite(str(split_dir / f"img_{i}.jpg"), img)
+    dl_cfg = {
+        "batch_size": 2,
+        "num_workers": num_workers,
+        "pin_memory": False,
+    }
+    if val_num_workers is not None:
+        dl_cfg["val_num_workers"] = val_num_workers
     return {
         "image": {"input_size": [64, 64]},
         "paths": {"data_coco": str(coco_root)},
-        "deep_learning": {
-            "batch_size": 2,
-            "num_workers": num_workers,
-            "pin_memory": False,
-        },
+        "deep_learning": dl_cfg,
     }
 
 
@@ -171,3 +175,52 @@ class TestDataLoaderWorkerSafety:
         train, _, _ = get_dataloaders(cfg)
         # PyTorch default is 2; we want at least that.
         assert train.prefetch_factor is None or train.prefetch_factor >= 2
+
+
+class TestValNumWorkers:
+    """Validation/benchmark loaders must NOT inherit train num_workers on Windows.
+
+    Smoke-v3 crashed entering validate() with WinError 1455 ("paging file too
+    small"): val_loader spawned 4 fresh torch-importing worker procs on top of
+    the 4 persistent train workers already alive, blowing through committed VM
+    in seconds. A 5k-image val set doesn't need workers — the train loop is
+    paused during validate(), so the GPU isn't waiting on disk IO.
+
+    Default is val_num_workers=0; users can override via config.
+    """
+
+    def test_val_loader_defaults_to_zero_workers_when_train_uses_workers(self, tmp_path):
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=4, splits=("train2017", "val2017"))
+        train, val, _ = get_dataloaders(cfg)
+        assert train.num_workers == 4
+        assert val is not None
+        assert val.num_workers == 0, (
+            "val loader must default to 0 workers to avoid the Windows pagefile "
+            "explosion when val workers spawn alongside persistent train workers"
+        )
+
+    def test_benchmark_loader_defaults_to_zero_workers(self, tmp_path):
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=4, splits=("train2017", "benchmark"))
+        _, _, bench = get_dataloaders(cfg)
+        assert bench is not None
+        assert bench.num_workers == 0
+
+    def test_val_num_workers_override_is_honored(self, tmp_path):
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(
+            tmp_path, num_workers=4, val_num_workers=2,
+            splits=("train2017", "val2017"),
+        )
+        train, val, _ = get_dataloaders(cfg)
+        assert train.num_workers == 4
+        assert val.num_workers == 2
+
+    def test_val_loader_skips_persistent_workers_when_zero(self, tmp_path):
+        # persistent_workers requires num_workers > 0; val defaults to 0 so it
+        # must come back False (not raise) even when the train side is positive.
+        from src.deep_learning.dataset import get_dataloaders
+        cfg = _fake_cfg(tmp_path, num_workers=4, splits=("train2017", "val2017"))
+        _, val, _ = get_dataloaders(cfg)
+        assert val.persistent_workers is False

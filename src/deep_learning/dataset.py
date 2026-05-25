@@ -95,38 +95,45 @@ def get_dataloaders(cfg):
     input_size = tuple(cfg["image"]["input_size"])
     batch_size = dl_cfg["batch_size"]
     num_workers = dl_cfg.get("num_workers", 0)
+    # val/benchmark default to 0 workers because validate() runs after the train
+    # loop pauses — adding workers there doesn't hide GPU latency, but it DOES
+    # spawn fresh torch-importing procs that crashed smoke-v3 with WinError 1455
+    # ("paging file too small") on Windows when added to persistent train workers.
+    val_num_workers = int(dl_cfg.get("val_num_workers", 0))
     pin_memory = dl_cfg.get("pin_memory", True)
 
     coco_dir = paths_cfg["data_coco"]
 
-    # persistent_workers keeps DataLoader workers alive across epochs — on Windows
-    # the process-spawn cost is non-trivial and dominates short epochs.
-    # prefetch_factor>=2 lets each worker queue batches ahead of the train loop,
-    # hiding the JPEG-decode + skimage rgb2lab latency behind GPU work.
-    persistent_workers = num_workers > 0
-    prefetch_factor = 2 if num_workers > 0 else None
-
     loaders = {}
     for split, augment in [("train2017", True), ("val2017", False), ("benchmark", False)]:
         split_dir = os.path.join(coco_dir, split)
-        if os.path.isdir(split_dir) and len(os.listdir(split_dir)) > 0:
-            dataset = ColorizationDataset(
-                image_dir=split_dir,
-                input_size=input_size,
-                augment=augment,
-            )
-            kwargs = dict(
-                batch_size=batch_size,
-                shuffle=(split == "train2017"),
-                num_workers=num_workers,
-                pin_memory=pin_memory,
-                drop_last=(split == "train2017"),
-                persistent_workers=persistent_workers,
-            )
-            if prefetch_factor is not None:
-                kwargs["prefetch_factor"] = prefetch_factor
-            loaders[split] = DataLoader(dataset, **kwargs)
-        else:
+        if not (os.path.isdir(split_dir) and len(os.listdir(split_dir)) > 0):
             loaders[split] = None
+            continue
+
+        dataset = ColorizationDataset(
+            image_dir=split_dir,
+            input_size=input_size,
+            augment=augment,
+        )
+
+        # Train uses the configured num_workers for throughput. Val/benchmark
+        # use a separate, conservative default (0) — see the rationale above.
+        # persistent_workers keeps DataLoader workers alive across epochs on
+        # Windows where process spawn is non-trivial; only valid when >0 workers.
+        # prefetch_factor>=2 hides JPEG-decode + skimage rgb2lab latency behind
+        # GPU work; only valid when >0 workers.
+        loader_workers = num_workers if split == "train2017" else val_num_workers
+        kwargs = dict(
+            batch_size=batch_size,
+            shuffle=(split == "train2017"),
+            num_workers=loader_workers,
+            pin_memory=pin_memory,
+            drop_last=(split == "train2017"),
+            persistent_workers=loader_workers > 0,
+        )
+        if loader_workers > 0:
+            kwargs["prefetch_factor"] = 2
+        loaders[split] = DataLoader(dataset, **kwargs)
 
     return loaders.get("train2017"), loaders.get("val2017"), loaders.get("benchmark")

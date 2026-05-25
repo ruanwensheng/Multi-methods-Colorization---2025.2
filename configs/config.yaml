@@ -54,6 +54,10 @@ deep_learning:
   num_workers: 4             # 4 worker procs on Windows; verified safe via tests/test_dataset.py.
                              # With 0 the Lab-conversion + JPEG-decode latency starves the GPU
                              # (we measured GTX 1660 SUPER at ~70% util, 2.5 h/epoch on 118K imgs).
+  val_num_workers: 0         # validate() / benchmark loaders: spawning fresh torch-importing
+                             # procs ON TOP of the persistent train workers crashed smoke-v3
+                             # with WinError 1455 (pagefile too small). Validation isn't I/O
+                             # bound enough to need workers — train loop is paused, GPU idle.
   pin_memory: true
 
   # Fine-tuning
