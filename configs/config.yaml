@@ -30,7 +30,9 @@ deep_learning:
 
   # Training
   epochs: 50
-  batch_size: 8
+  batch_size: 4              # batch=8 + AMP=True crashed at iter 1649 with NaN-poisoned weights
+                             # (fp16 overflow as the randomly-init head grew). batch=4 + AMP=False
+                             # fits 6 GB VRAM at fp32, ~2x slower per batch but numerically stable.
   learning_rate: 0.0002
   optimizer: "adam"
   betas: [0.9, 0.999]
@@ -41,7 +43,9 @@ deep_learning:
   loss: "cross_entropy"      # "cross_entropy" or "huber"
 
   # Mixed precision (for 6GB VRAM GPUs)
-  use_amp: true
+  use_amp: false             # disabled after smoke run 4 hit NaN weights at iter 1649;
+                             # GTX 1660 SUPER (CC 7.5) supports fp16 but not bf16 acceleration,
+                             # so fp16 AMP is the only fast path and it overflowed here.
 
   # Training safety / observability (added after smoke-v2 ran 8h with loss=NaN)
   max_grad_norm: 1.0              # clip global gradient L2 norm before optimizer.step
