@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-24 — Phase 0 + Phase 1 complete; ready for Phase 2 (training).
+> **Last updated:** 2026-05-25 — Phases 0, 1, 2 complete. Best model: epoch 5, val_loss 3.23, PSNR 22.85, SSIM 0.914.
 
 ---
 
@@ -41,12 +41,15 @@
 
 ## Phase 2: Training
 
-- [ ] **T2.1** Fine-tune Zhang16 on COCO 2017
-  - `python tools/train_deep.py --config configs/config.yaml`
-  - Verify: `models/deep_learning/best_model.pth` exists, MLflow run logged
-  - _Blocked by: T1.1, T1.2_
+- [x] **T2.1** Fine-tune Zhang16 on COCO 2017
+  - `python tools/train_deep.py --config configs/config.yaml --epochs 5 --max-train-batches 2000`
+  - Settings: AMP off + batch_size=4 (the AMP=True path NaN'd at iter 1649 with fp16 overflow; see commits 412f48c, 2de761b)
+  - Results: 5 epochs × 2000 batches, ~13 min/epoch + ~6 min/val
+  - Best: epoch 5, val_loss 3.23, PSNR 22.85 dB, SSIM 0.914 — saved to `models/deep_learning/best_model.pth`
+  - MLflow run: `1753768c996c473e989676f3ef3a1d1a` in experiment `deep-colorization`
+  - Note: epoch 2 val_loss spiked to 16.85 (one bad batch); training otherwise monotonically improved
 
-**CHECKPOINT 2** — [ ] Trained model available
+**CHECKPOINT 2** — [x] Trained model available
 
 ---
 
