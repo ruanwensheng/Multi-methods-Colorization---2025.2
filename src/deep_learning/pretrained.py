@@ -362,8 +362,8 @@ class ControlNetColorizer(PretrainedColorizer):
     VRAM: ~6-8 GB with FP16 and memory optimizations.
     """
 
-    def __init__(self, controlnet_model="neurallove/controlnet-sd21-colorization-diffusers",
-                 sd_model="stabilityai/stable-diffusion-2-1-base",
+    def __init__(self, controlnet_model="ioclab/control_v1p_sd15_brightness",
+                 sd_model="sd-legacy/stable-diffusion-v1-5",
                  num_inference_steps=30, guidance_scale=7.5, device="auto"):
         self._pipe = None
         self._controlnet_model = controlnet_model

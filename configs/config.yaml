@@ -87,13 +87,24 @@ deep_learning:
     deoldify:
       enabled: true
       model_path: "models/pretrained/deoldify_artistic.pth"
-    # Diffusion: ControlNet + Stable Diffusion 2.1
+    # Diffusion: ControlNet + Stable Diffusion 1.5 (substituted from SD 2.1)
     # Theory: Palette (Saharia 2022), Practice: ControlNet (Zhang & Agrawala 2023)
     # Repo: https://github.com/lllyasviel/ControlNet
+    #
+    # SUBSTITUTION (2026-05-25): The spec called for SD 2.1 + the neurallove
+    # SD 2.1 colorization ControlNet. Stability AI has since deprecated the
+    # entire SD 2.x line — it's no longer listed on their HF profile and all
+    # `stabilityai/stable-diffusion-2*` URLs return HTTP 401 with no public
+    # access path even with a valid HF token. We substituted the closest
+    # available open Diffusion-category pipeline:
+    #   - Base: sd-legacy/stable-diffusion-v1-5 (community-maintained SD 1.5)
+    #   - ControlNet: ioclab/control_v1p_sd15_brightness (conditions on
+    #     brightness, which IS the grayscale colorization signal)
+    # The model differs from the spec; the category does not.
     controlnet:
       enabled: true
-      controlnet_model: "neurallove/controlnet-sd21-colorization-diffusers"
-      sd_model: "stabilityai/stable-diffusion-2-1-base"
+      controlnet_model: "ioclab/control_v1p_sd15_brightness"
+      sd_model: "sd-legacy/stable-diffusion-v1-5"
       num_inference_steps: 30
       guidance_scale: 7.5
 
