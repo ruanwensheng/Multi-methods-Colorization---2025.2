@@ -11,7 +11,7 @@ import cv2
 import torch
 import torch.nn.functional as F
 
-from .model import Zhang16Net, Zhang16Regression, build_model
+from .model import Zhang16Net, Zhang16Regression, build_model, load_zhang16_eccv_weights
 from .quantize import ABQuantizer
 from .utils import bgr_to_lab, lab_to_bgr, normalize_L, denormalize_L, denormalize_ab
 
@@ -58,14 +58,25 @@ class DeepColorizer:
             num_classes = self.quantizer.num_bins if self.quantizer else 313
             self.model = Zhang16Net(num_classes=num_classes)
 
-        # Load weights
+        # Load weights — auto-detect checkpoint format:
+        #   1. Our training checkpoint: {"model_state_dict": ..., "epoch": ...}
+        #   2. Official Zhang16 ECCV checkpoint: raw dict with `modelN.*` keys
+        #   3. Bare state_dict with our `convN.*` keys
+        # Without (2), trying to evaluate the pretrained ECCV baseline (T3.1)
+        # would crash on strict-load mismatch; the remapper handles the
+        # `modelN -> convN` rename + shape filtering.
         if model_path is not None:
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
-            if "model_state_dict" in checkpoint:
-                self.model.load_state_dict(checkpoint["model_state_dict"])
+            sd = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+            if isinstance(sd, dict) and any(k.startswith("model") and "." in k for k in sd.keys()):
+                summary = load_zhang16_eccv_weights(self.model, model_path, device=self.device)
+                print(
+                    f"Loaded {summary['loaded']} ECCV weight keys from {model_path}; "
+                    f"dropped {len(summary['dropped'])}, missing {len(summary['missing'])}"
+                )
             else:
-                self.model.load_state_dict(checkpoint)
-            print(f"Loaded weights from {model_path}")
+                self.model.load_state_dict(sd)
+                print(f"Loaded weights from {model_path}")
 
         self.model = self.model.to(self.device)
         self.model.eval()

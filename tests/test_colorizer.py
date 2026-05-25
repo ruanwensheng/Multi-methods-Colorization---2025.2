@@ -71,6 +71,79 @@ class TestDeepColorizerColorize:
         np.testing.assert_array_equal(r1, r2)
 
 
+class TestDeepColorizerEccvFormat:
+    """DeepColorizer must accept raw Zhang 2016 ECCV checkpoints.
+
+    The official checkpoint uses `modelN.*` keys; our Zhang16Net uses `convN.*`.
+    Without remapping, `strict=False` load_state_dict drops every weight and
+    we'd be evaluating a random model on the benchmark — which is exactly the
+    T3.1 deliverable (pretrained baseline), so silently broken results would
+    look like "Zhang16 trained from scratch produces PSNR 20 dB" instead of
+    the real ECCV number (~25 dB). Detect the ECCV format and route through
+    the existing load_zhang16_eccv_weights remapper.
+    """
+
+    def _make_eccv_checkpoint(self, tmp_path, num_classes=313):
+        """Build a synthetic ECCV-format checkpoint with the official `modelN.*`
+        naming and the right shapes to exercise the remapper end-to-end.
+        """
+        import torch
+        from src.deep_learning.model import Zhang16Net
+
+        # Use our target model's state_dict to discover the expected shapes,
+        # then rebuild them under the ECCV `modelN.*` naming.
+        target = Zhang16Net(num_classes=num_classes if num_classes else 233).state_dict()
+        src = {}
+        for tk, tv in target.items():
+            if tk.startswith("conv"):
+                ek = "model" + tk[len("conv"):]
+                src[ek] = torch.empty_like(tv).normal_(0, 0.01) if tv.dtype.is_floating_point \
+                    else torch.zeros_like(tv)
+        ckpt_path = str(tmp_path / "zhang16_eccv_synth.pth")
+        torch.save(src, ckpt_path)
+        return ckpt_path
+
+    def test_loads_raw_eccv_checkpoint_without_crashing(self, tmp_path):
+        from src.deep_learning.colorizer import DeepColorizer
+        ckpt = self._make_eccv_checkpoint(tmp_path)
+        # Must not raise — without ECCV remapping, strict load fails on model* keys.
+        colorizer = DeepColorizer(model_path=ckpt, device="cpu")
+        assert colorizer.model is not None
+
+    def test_eccv_weights_actually_transfer(self, tmp_path):
+        # The point of remapping is to actually load the upstream weights, not
+        # silently start from random init. Sample one conv weight from the
+        # source and verify it survived the rename.
+        import torch
+        from src.deep_learning.colorizer import DeepColorizer
+
+        ckpt_path = self._make_eccv_checkpoint(tmp_path)
+        src_sd = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        # Pick a key that we know exists in both formats (conv1 is small + present)
+        ecvv_key = "model1.0.weight"
+        target_key = "conv1.0.weight"
+        assert ecvv_key in src_sd
+
+        colorizer = DeepColorizer(model_path=ckpt_path, device="cpu")
+        loaded = dict(colorizer.model.state_dict())
+        torch.testing.assert_close(loaded[target_key], src_sd[ecvv_key])
+
+    def test_wrapped_checkpoint_still_loads(self, tmp_path):
+        # Don't regress the existing path: our training output wraps the state
+        # dict under "model_state_dict" with conv* keys, and must still work.
+        import torch
+        from src.deep_learning.colorizer import DeepColorizer
+        from src.deep_learning.model import Zhang16Net
+
+        model = Zhang16Net(num_classes=233)
+        payload = {"model_state_dict": model.state_dict(), "epoch": 5}
+        ckpt_path = str(tmp_path / "ours_wrapped.pth")
+        torch.save(payload, ckpt_path)
+
+        colorizer = DeepColorizer(model_path=ckpt_path, device="cpu")
+        assert colorizer.model is not None
+
+
 class TestDeepColorizerBatch:
     """Test batch colorization."""
 

@@ -26,6 +26,21 @@ from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.stats import bootstrap_ci, format_metric
 
 
+def resolve_output_dir(cfg, tag=None, output_dir_override=None):
+    """Resolve where eval results land.
+
+    Priority:
+      1. Explicit --output-dir override (caller knows best).
+      2. results_deep/metrics/<tag>/ — separates T3.1 (pretrained) from T3.2
+         (finetuned) so the second run doesn't clobber the first.
+      3. results_deep/metrics/        — legacy default; preserved for back-compat.
+    """
+    if output_dir_override:
+        return output_dir_override
+    base = os.path.join(cfg["paths"]["results_deep"], "metrics")
+    return os.path.join(base, tag) if tag else base
+
+
 def evaluate(colorizer, test_dir, output_dir, max_images=None):
     """Run evaluation on a directory of test images.
 
@@ -88,6 +103,10 @@ def main():
     parser.add_argument("--model-path", required=True, help="Path to model checkpoint")
     parser.add_argument("--test-dir", default=None, help="Directory of test images")
     parser.add_argument("--output-dir", default=None, help="Output directory for results")
+    parser.add_argument("--tag", default=None,
+                        help="Subdir name for outputs (e.g. 'pretrained' or 'finetuned'). "
+                             "Routes results to results_deep/metrics/<tag>/. "
+                             "Ignored if --output-dir is set.")
     parser.add_argument("--max-images", type=int, default=None, help="Max images to evaluate")
     parser.add_argument("--config", default="configs/config.yaml", help="Config file")
     parser.add_argument("--device", default="auto", help="Device to use")
@@ -97,7 +116,7 @@ def main():
 
     # Defaults from config
     test_dir = args.test_dir or os.path.join(cfg["paths"]["data_coco"], "benchmark")
-    output_dir = args.output_dir or os.path.join(cfg["paths"]["results_deep"], "metrics")
+    output_dir = resolve_output_dir(cfg, tag=args.tag, output_dir_override=args.output_dir)
 
     if not os.path.isdir(test_dir):
         print(f"ERROR: Test directory not found: {test_dir}")
@@ -167,12 +186,16 @@ def main():
     print(f"  Avg time: {aggregate['avg_time_sec']:.3f} s/image")
     print(f"\nResults saved to: {output_dir}")
 
-    # MLflow logging
+    # MLflow logging — tag becomes the run_name so T3.1/T3.2 are searchable
     try:
         import mlflow
         mlflow.set_experiment("deep-colorization-eval")
-        with mlflow.start_run():
-            mlflow.log_params({"model_path": args.model_path, "test_dir": test_dir})
+        with mlflow.start_run(run_name=args.tag or "eval"):
+            mlflow.log_params({
+                "model_path": args.model_path,
+                "test_dir": test_dir,
+                "tag": args.tag or "",
+            })
             mlflow.log_metrics(aggregate)
             mlflow.log_artifact(csv_path)
             mlflow.log_artifact(json_path)
