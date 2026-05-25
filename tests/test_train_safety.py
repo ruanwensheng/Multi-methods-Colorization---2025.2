@@ -261,6 +261,40 @@ class TestMaxTrainBatches:
         assert len(calls) == 4  # all 4 batches consumed
 
 
+class _OutlierLoss(nn.Module):
+    """Loss returning a HUGE-but-finite value — to exercise the outlier filter.
+
+    Distinct from _ExplodingLoss (which returns NaN). 2.4M is the actual
+    epoch-7 outlier seen in Phase 3; that single batch poisoned the val_loss
+    mean and prevented best-model save even though PSNR was higher than
+    the previous best. The outlier filter prevents that regression.
+    """
+
+    def forward(self, pred, target):
+        base = pred.sum() * 0.0
+        return base + 2_400_000.0
+
+
+class TestValidateOutlierFilter:
+    def test_outlier_batches_are_excluded_from_val_loss(self, tiny_cfg, tiny_data_dir):
+        from src.deep_learning.model import Zhang16Regression
+        from src.deep_learning.dataset import ColorizationDataset
+        from src.deep_learning.train import Trainer
+        from torch.utils.data import DataLoader
+
+        ds = ColorizationDataset(tiny_data_dir, input_size=(64, 64))
+        loader = DataLoader(ds, batch_size=2)
+        trainer = Trainer(
+            Zhang16Regression(), loader, loader,
+            _OutlierLoss(), tiny_cfg, torch.device("cpu"),
+        )
+        avg_loss, _ = trainer.validate()
+        # Every batch returns 2.4M — they should ALL be excluded as outliers,
+        # leaving num_batches=0 and avg_loss=nan (the no-valid-samples sentinel).
+        assert math.isnan(avg_loss), \
+            "huge-but-finite loss batches must be dropped, not averaged in"
+
+
 class TestValidateResilientToNaN:
     """validate() must not crash when the model output is NaN.
 

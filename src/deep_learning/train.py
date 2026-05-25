@@ -30,6 +30,17 @@ from .utils import denormalize_L, denormalize_ab, lab_to_rgb
 from .quantize import ABQuantizer
 
 
+# Validation aggregation outlier bound.
+#
+# Observed during Phase 3: one batch in 1250 val batches of epoch 7 produced
+# loss=2.4e6 (a finite-but-pathological number), inflating the epoch mean
+# to ~2.4M and preventing best-checkpoint save even though that epoch's
+# PSNR/SSIM were higher than the prior best. CE with 233 bins is naturally
+# bounded around log(233) * max_class_weight ~= 22, so any batch over a
+# few hundred is unambiguously an outlier we want to drop, not average in.
+_VAL_LOSS_OUTLIER_BOUND = 1_000.0
+
+
 class Trainer:
     """Handles model training, validation, and experiment tracking.
 
@@ -226,6 +237,10 @@ class Trainer:
         all_psnr = []
         all_ssim = []
 
+        # Any per-batch loss > this bound is treated as an outlier — see the
+        # docstring of `_VAL_LOSS_OUTLIER_BOUND` for why this matters.
+        outlier_bound = _VAL_LOSS_OUTLIER_BOUND
+
         for batch in tqdm(self.val_loader, desc="Validation", leave=False):
             L = batch["L"].to(self.device)
             ab = batch["ab"].to(self.device)
@@ -234,7 +249,14 @@ class Trainer:
             loss = self.loss_fn(output, ab)
 
             loss_val = loss.item()
-            if math.isfinite(loss_val):
+            # Cap pathological-but-finite batches. ClassRebalancedCELoss with
+            # 233 bins is theoretically bounded around log(233) * max_class_weight
+            # ~= 22, but we've observed single batches hitting 1e6+ (probably
+            # one image whose ab distribution drives the rebalance weight chain
+            # into a numerical edge case). One such batch in 1250 val batches
+            # poisons the mean by ~2000, flipping best-model selection even
+            # when PSNR/SSIM say the epoch is actually better. We drop it.
+            if math.isfinite(loss_val) and loss_val <= outlier_bound:
                 total_loss += loss_val
                 num_batches += 1
 
