@@ -60,3 +60,32 @@ class TestResolveOutputDir:
         fine = evaluate_deep.resolve_output_dir(cfg, tag="finetuned")
         # The whole point of --tag: T3.1 and T3.2 outputs are independent.
         assert pre != fine
+
+
+class TestBuildColorizer:
+    """The factory must route --method to the right comparison-model wrapper.
+
+    T3.3/T3.4/T3.5 reuse evaluate_deep's metric pipeline (PSNR/SSIM/LPIPS +
+    bootstrap CIs + same JSON shape) but swap in a non-Zhang16 model. The
+    factory keeps the CLI surface uniform: pick our trained model via
+    --model-path, or a comparison model via --method.
+    """
+
+    def test_method_zhang2017_returns_zhang2017_colorizer(self, evaluate_deep):
+        from src.deep_learning.pretrained import Zhang2017Colorizer
+        c = evaluate_deep.build_colorizer(method="zhang2017", model_path=None, cfg={}, device="cpu")
+        assert isinstance(c, Zhang2017Colorizer)
+
+    def test_method_deoldify_returns_deoldify_colorizer(self, evaluate_deep):
+        from src.deep_learning.pretrained import DeOldifyColorizer
+        c = evaluate_deep.build_colorizer(method="deoldify", model_path=None, cfg={}, device="cpu")
+        assert isinstance(c, DeOldifyColorizer)
+
+    def test_method_controlnet_returns_controlnet_colorizer(self, evaluate_deep):
+        from src.deep_learning.pretrained import ControlNetColorizer
+        c = evaluate_deep.build_colorizer(method="controlnet", model_path=None, cfg={}, device="cpu")
+        assert isinstance(c, ControlNetColorizer)
+
+    def test_unknown_method_raises(self, evaluate_deep):
+        with pytest.raises(ValueError, match="(?i)unknown method"):
+            evaluate_deep.build_colorizer(method="bogus", model_path=None, cfg={}, device="cpu")

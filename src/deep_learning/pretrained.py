@@ -22,10 +22,23 @@ All wrappers expose the same API:
 
 import time
 import os
+import sys
 import tempfile
 from abc import ABC, abstractmethod
 import numpy as np
 import cv2
+
+
+def _add_vendored_colorizers_to_path():
+    """Make `from colorizers import siggraph17` work without a PyPI install.
+
+    richzhang/colorization isn't published as a pip package, so we vendor its
+    Python source at `src/vendor/colorizers/`. This helper prepends the vendor
+    dir to sys.path on demand. Safe to call multiple times.
+    """
+    vendor = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "vendor"))
+    if os.path.isdir(os.path.join(vendor, "colorizers")) and vendor not in sys.path:
+        sys.path.insert(0, vendor)
 
 
 class PretrainedColorizer(ABC):
@@ -88,13 +101,19 @@ class Zhang2017Colorizer(PretrainedColorizer):
         try:
             import torch
             self._torch = torch
-            # Try official colorizers package first
+            # Try official colorizers package; on miss, fall back to vendored copy.
             try:
                 from colorizers import siggraph17
+            except ImportError:
+                _add_vendored_colorizers_to_path()
+                try:
+                    from colorizers import siggraph17
+                except ImportError:
+                    siggraph17 = None
+            if siggraph17 is not None:
                 self._load_fn = siggraph17
                 self._use_package = True
-            except ImportError:
-                # Fall back to manual loading
+            else:
                 self._use_package = False
             self._available = True
         except ImportError:

@@ -69,6 +69,28 @@ class TestModelNames:
         assert "Diffusion" in name
 
 
+class TestVendoredColorizers:
+    """The Zhang17 wrapper must find the vendored richzhang/colorization package.
+
+    The upstream `colorizers` package isn't on PyPI (no setup.py), so we vendor
+    its Python source at `src/vendor/colorizers/`. Without a sys.path bridge,
+    `from colorizers import siggraph17` raises ImportError and T3.3 silently
+    falls through to the manual-load path that just `raise ImportError(...)`s.
+    """
+
+    def test_vendored_colorizers_importable(self):
+        # Tests the bridge in Zhang2017Colorizer: even with no system-installed
+        # `colorizers`, the wrapper should arrive at `_use_package=True` via the
+        # vendored fallback.
+        from src.deep_learning.pretrained import Zhang2017Colorizer
+        m = Zhang2017Colorizer()
+        assert m.is_available, "Zhang2017 should be available via vendored colorizers"
+        # _use_package is the signal that the import worked; the manual path is
+        # documented-as-broken so we don't want to be on it.
+        assert getattr(m, "_use_package", False), \
+            "Zhang2017Colorizer must use the vendored colorizers package, not the unfinished manual fallback"
+
+
 class TestGetComparisonModels:
     """Test the factory function."""
 

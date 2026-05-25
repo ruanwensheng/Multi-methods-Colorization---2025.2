@@ -26,6 +26,40 @@ from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.stats import bootstrap_ci, format_metric
 
 
+# Comparison-model registry. Keys are CLI-friendly names; values are the
+# (lazy) factories so test imports don't pay deoldify/diffusers import cost.
+_COMPARISON_FACTORIES = {
+    "zhang2017": ("src.deep_learning.pretrained", "Zhang2017Colorizer"),
+    "deoldify":  ("src.deep_learning.pretrained", "DeOldifyColorizer"),
+    "controlnet": ("src.deep_learning.pretrained", "ControlNetColorizer"),
+}
+
+
+def build_colorizer(method=None, model_path=None, cfg=None, device="auto", temperature=0.38):
+    """Build whichever colorizer the caller asked for.
+
+    Either --method (a comparison-model key) OR --model-path (our Zhang16
+    checkpoint) selects the colorizer. The rest of evaluate_deep is model-
+    agnostic — it just calls .colorize() and aggregates metrics — so swapping
+    the constructor is enough to reuse the pipeline for T3.3/3.4/3.5.
+    """
+    if method:
+        method_lower = method.lower()
+        if method_lower not in _COMPARISON_FACTORIES:
+            raise ValueError(
+                f"Unknown method '{method}'. Known: {list(_COMPARISON_FACTORIES)}"
+            )
+        mod_name, cls_name = _COMPARISON_FACTORIES[method_lower]
+        import importlib
+        cls = getattr(importlib.import_module(mod_name), cls_name)
+        return cls()
+    if model_path is None:
+        raise ValueError("Either --method or --model-path is required")
+    return DeepColorizer(
+        model_path=model_path, cfg=cfg, device=device, temperature=temperature
+    )
+
+
 def resolve_output_dir(cfg, tag=None, output_dir_override=None):
     """Resolve where eval results land.
 
@@ -100,7 +134,11 @@ def evaluate(colorizer, test_dir, output_dir, max_images=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate colorization model")
-    parser.add_argument("--model-path", required=True, help="Path to model checkpoint")
+    parser.add_argument("--model-path", default=None,
+                        help="Path to our Zhang16 checkpoint. Mutually exclusive with --method.")
+    parser.add_argument("--method", default=None, choices=list(_COMPARISON_FACTORIES),
+                        help="Use a comparison model (Zhang17/DeOldify/ControlNet) instead "
+                             "of our Zhang16. Mutually exclusive with --model-path.")
     parser.add_argument("--test-dir", default=None, help="Directory of test images")
     parser.add_argument("--output-dir", default=None, help="Output directory for results")
     parser.add_argument("--tag", default=None,
@@ -123,9 +161,20 @@ def main():
         print("Run 'python tools/download_coco.py' first.")
         sys.exit(1)
 
-    # Load model
-    print(f"Loading model from {args.model_path}...")
-    colorizer = DeepColorizer(
+    if not args.method and not args.model_path:
+        print("ERROR: must pass either --model-path or --method")
+        sys.exit(2)
+    if args.method and args.model_path:
+        print("ERROR: --model-path and --method are mutually exclusive")
+        sys.exit(2)
+
+    # Load model (our Zhang16 or a comparison model)
+    if args.method:
+        print(f"Building comparison model: {args.method}")
+    else:
+        print(f"Loading model from {args.model_path}...")
+    colorizer = build_colorizer(
+        method=args.method,
         model_path=args.model_path,
         cfg=cfg,
         device=args.device,
@@ -192,7 +241,8 @@ def main():
         mlflow.set_experiment("deep-colorization-eval")
         with mlflow.start_run(run_name=args.tag or "eval"):
             mlflow.log_params({
-                "model_path": args.model_path,
+                "model_path": args.model_path or "",
+                "method": args.method or "",
                 "test_dir": test_dir,
                 "tag": args.tag or "",
             })
