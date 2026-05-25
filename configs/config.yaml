@@ -43,6 +43,12 @@ deep_learning:
   # Mixed precision (for 6GB VRAM GPUs)
   use_amp: true
 
+  # Training safety / observability (added after smoke-v2 ran 8h with loss=NaN)
+  max_grad_norm: 1.0              # clip global gradient L2 norm before optimizer.step
+  nan_patience: 5                 # abort if loss is non-finite this many batches in a row
+  log_every_n_batches: 50         # MLflow batch-level logging cadence (0 disables)
+  checkpoint_every_n_batches: 500 # mid-epoch checkpoint cadence (0 disables)
+
   # Data
   dataset: "coco2017"
   num_workers: 4             # 4 worker procs on Windows; verified safe via tests/test_dataset.py.

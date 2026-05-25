@@ -10,6 +10,7 @@ Provides a Trainer class that handles:
 """
 
 import os
+import math
 import time
 import json
 import numpy as np
@@ -84,6 +85,21 @@ class Trainer:
         self.loss_type = dl_cfg.get("loss", "cross_entropy")
         self.temperature = dl_cfg.get("temperature", 0.38)
 
+        # Safety / observability knobs — defaults aim for "training survives 9h
+        # epochs on slow GPUs without losing work or going silently NaN".
+        # max_grad_norm: clip gradients to bound BN/Conv weight blow-up; without
+        #   it the smoke-v2 run went loss=NaN at iter 1222 and kept churning.
+        # nan_patience: abort if loss is non-finite this many batches in a row.
+        # log_every_n_batches: per-batch MLflow logging cadence so a crash mid-
+        #   epoch still leaves a debuggable curve.
+        # checkpoint_every_n_batches: persist `in_progress.pth` every N batches;
+        #   set 0 to disable.
+        self.max_grad_norm = float(dl_cfg.get("max_grad_norm", 1.0))
+        self.nan_patience = int(dl_cfg.get("nan_patience", 5))
+        self.log_every_n_batches = int(dl_cfg.get("log_every_n_batches", 50))
+        self.checkpoint_every_n_batches = int(dl_cfg.get("checkpoint_every_n_batches", 500))
+        self._global_step = 0
+
         # Tracking
         self.best_val_loss = float("inf")
         self.history = {"train_loss": [], "val_loss": [], "val_psnr": [], "val_ssim": []}
@@ -97,17 +113,23 @@ class Trainer:
         os.makedirs(self.save_dir, exist_ok=True)
 
     def train_epoch(self, epoch):
-        """Run one training epoch.
+        """Run one training epoch with grad clipping, NaN guard, and batch logging.
 
         Returns:
             float: Average training loss for the epoch.
+
+        Raises:
+            RuntimeError: If loss is non-finite for ``self.nan_patience`` batches
+                in a row. We abort rather than churn — the prior smoke-v2 run lost
+                8h after loss went NaN with no early stop.
         """
         self.model.train()
         total_loss = 0.0
         num_batches = 0
+        nan_streak = 0
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}", leave=False)
-        for batch in pbar:
+        for batch_idx, batch in enumerate(pbar):
             L = batch["L"].to(self.device)
             ab = batch["ab"].to(self.device)
 
@@ -118,17 +140,62 @@ class Trainer:
                     output = self.model(L)
                     loss = self.loss_fn(output, ab)
                 self.scaler.scale(loss).backward()
+                # Unscale before clipping so max_grad_norm is in real units.
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
                 output = self.model(L)
                 loss = self.loss_fn(output, ab)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
-            total_loss += loss.item()
-            num_batches += 1
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+            loss_val = loss.item()
+            if not math.isfinite(loss_val):
+                nan_streak += 1
+                if nan_streak >= self.nan_patience:
+                    raise RuntimeError(
+                        f"Training aborted: loss has been non-finite for "
+                        f"{nan_streak} consecutive batches (epoch {epoch}, "
+                        f"batch {batch_idx}). Last loss={loss_val}. "
+                        f"Lower learning_rate, raise max_grad_norm scrutiny, or "
+                        f"disable AMP and retry."
+                    )
+            else:
+                nan_streak = 0
+                total_loss += loss_val
+                num_batches += 1
+
+            self._global_step += 1
+            pbar.set_postfix({"loss": f"{loss_val:.4f}"})
+
+            # Per-batch MLflow logging — keeps a curve even if the epoch crashes.
+            if (
+                self.log_every_n_batches > 0
+                and (batch_idx + 1) % self.log_every_n_batches == 0
+                and mlflow is not None
+            ):
+                try:
+                    mlflow.log_metrics(
+                        {
+                            "batch_train_loss": loss_val,
+                            "batch_lr": self.optimizer.param_groups[0]["lr"],
+                        },
+                        step=self._global_step,
+                    )
+                except Exception:
+                    pass
+
+            # Mid-epoch checkpoint — bounds work lost to a crash at one interval.
+            if (
+                self.checkpoint_every_n_batches > 0
+                and (batch_idx + 1) % self.checkpoint_every_n_batches == 0
+            ):
+                self.save_checkpoint(
+                    os.path.join(self.save_dir, "in_progress.pth"), epoch
+                )
 
         avg_loss = total_loss / max(num_batches, 1)
         return avg_loss
@@ -137,8 +204,14 @@ class Trainer:
     def validate(self):
         """Run validation and compute metrics.
 
+        Skips image-metric computation for any batch whose forward output
+        contains NaN/Inf — a NaN-poisoned model used to crash this loop
+        downstream in skimage.lab2rgb after exhausting host memory.
+
         Returns:
             Tuple of (avg_loss, metrics_dict) where metrics_dict has psnr, ssim.
+            When every batch is NaN, psnr/ssim come back as ``float('nan')``
+            instead of a misleading 0.0.
         """
         if self.val_loader is None:
             return 0.0, {}
@@ -155,8 +228,16 @@ class Trainer:
 
             output = self.model(L)
             loss = self.loss_fn(output, ab)
-            total_loss += loss.item()
-            num_batches += 1
+
+            loss_val = loss.item()
+            if math.isfinite(loss_val):
+                total_loss += loss_val
+                num_batches += 1
+
+            # Skip per-image metrics if forward output is NaN/Inf — the smoke-v2
+            # crash chain started here (NaN ab -> lab2rgb -> RAM exhaustion).
+            if not torch.isfinite(output).all():
+                continue
 
             # Compute image metrics on a subset (first 2 images per batch)
             n_eval = min(2, L.shape[0])
@@ -164,14 +245,18 @@ class Trainer:
                 L_single = L[i:i+1]
                 ab_target = ab[i:i+1]
 
-                # Get predicted ab at full resolution
+                # Get predicted ab at full resolution — reuse `output` instead
+                # of calling forward() again per image.
                 if self.loss_type == "cross_entropy" and self.quantizer is not None:
-                    ab_pred = self.model.predict_ab(L_single, self.quantizer, self.temperature)
+                    ab_pred = self._decode_logits_to_ab(output[i:i+1], L_single.shape)
                 else:
                     _, _, H, W = L_single.shape
                     ab_pred_small = output[i:i+1]
                     ab_pred = F.interpolate(ab_pred_small, size=(H, W), mode="bilinear", align_corners=False)
                     ab_pred = ab_pred * 110.0  # always denormalize regression output
+
+                if not torch.isfinite(ab_pred).all():
+                    continue
 
                 # Convert to RGB for metrics
                 L_np = denormalize_L(L_single[0, 0].cpu().numpy())
@@ -186,12 +271,37 @@ class Trainer:
                 all_psnr.append(psnr)
                 all_ssim.append(ssim)
 
-        avg_loss = total_loss / max(num_batches, 1)
+        avg_loss = total_loss / max(num_batches, 1) if num_batches > 0 else float("nan")
         metrics = {
-            "psnr": float(np.mean(all_psnr)) if all_psnr else 0.0,
-            "ssim": float(np.mean(all_ssim)) if all_ssim else 0.0,
+            "psnr": float(np.mean(all_psnr)) if all_psnr else float("nan"),
+            "ssim": float(np.mean(all_ssim)) if all_ssim else float("nan"),
         }
         return avg_loss, metrics
+
+    def _decode_logits_to_ab(self, logits, full_shape):
+        """Decode classification logits to ab tensor via annealed-mean.
+
+        Mirrors `Zhang16Net.predict_ab` but reuses precomputed logits so we
+        don't run forward() twice per validation image.
+
+        Args:
+            logits: (1, Q, H', W') logits from one image.
+            full_shape: (1, 1, H, W) tuple — target full resolution.
+
+        Returns:
+            (1, 2, H, W) ab tensor in [-110, 110].
+        """
+        _, _, H, W = full_shape
+        probs = F.softmax(logits, dim=1)
+        probs_full = F.interpolate(probs, size=(H, W), mode="bilinear", align_corners=False)
+        ab_bins = torch.from_numpy(self.quantizer.ab_bins).float().to(logits.device)
+        log_probs = torch.log(probs_full + 1e-8)
+        annealed = torch.exp(log_probs / self.temperature)
+        annealed = annealed / (annealed.sum(dim=1, keepdim=True) + 1e-8)
+        B, Q, H_out, W_out = annealed.shape
+        flat = annealed.permute(0, 2, 3, 1).reshape(-1, Q)
+        ab_pred = flat @ ab_bins
+        return ab_pred.reshape(B, H_out, W_out, 2).permute(0, 3, 1, 2)
 
     def fit(self, num_epochs=None):
         """Full training loop with MLflow logging.

@@ -195,3 +195,49 @@ class ABQuantizer:
         w = w / (np.sum(p_tilde * w) + 1e-8)
 
         return w.astype(np.float32)
+
+
+def compute_empirical_distribution(dataset, quantizer, max_samples=1000, cache_path=None):
+    """Estimate the empirical distribution of ab values across a dataset.
+
+    Walks up to ``max_samples`` images, accumulates per-bin pixel counts using
+    the quantizer's nearest-neighbor encoder, and returns a normalized
+    distribution over bins. Results are cached to ``cache_path`` so the
+    expensive walk runs at most once across training sessions.
+
+    Without this, ``ClassRebalancedCELoss`` falls back to uniform weights and
+    the model has no incentive to predict saturated colors — the classic
+    "Zhang16 outputs sepia" failure mode.
+
+    Args:
+        dataset: Indexable dataset yielding dicts with key ``"ab"`` (a tensor
+            shaped (2, H, W) with values normalized to roughly [-1, 1]).
+        quantizer: ABQuantizer instance.
+        max_samples: Cap on the number of images visited. Default 1000.
+        cache_path: Optional .npy path. If it exists, it's loaded and returned
+            without recomputing. If provided and missing, the computed
+            distribution is written there.
+
+    Returns:
+        np.ndarray of shape (quantizer.num_bins,), summing to ~1.0.
+    """
+    if cache_path is not None and os.path.exists(cache_path):
+        return np.load(cache_path)
+
+    counts = np.zeros(quantizer.num_bins, dtype=np.float64)
+    n = min(len(dataset), int(max_samples))
+    for i in range(n):
+        sample = dataset[i]
+        ab_norm = sample["ab"].detach().cpu().numpy()  # (2, H, W) in ~[-1, 1]
+        ab = ab_norm.transpose(1, 2, 0) * 110.0        # (H, W, 2) in [-110, 110]
+        idx = quantizer.encode(ab).reshape(-1)
+        binc = np.bincount(idx, minlength=quantizer.num_bins).astype(np.float64)
+        counts += binc
+
+    total = counts.sum()
+    dist = counts / total if total > 0 else np.full(quantizer.num_bins, 1.0 / quantizer.num_bins)
+
+    if cache_path is not None:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        np.save(cache_path, dist)
+    return dist

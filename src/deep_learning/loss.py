@@ -7,6 +7,7 @@ Implements:
 2. HuberColorLoss - Smooth-L1 loss on ab channels (simpler baseline)
 """
 
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -113,12 +114,22 @@ class HuberColorLoss(nn.Module):
         return F.smooth_l1_loss(pred_ab, target_ab, beta=self.delta)
 
 
-def build_loss(cfg, quantizer=None):
+def build_loss(cfg, quantizer=None, train_dataset=None):
     """Build loss function from config.
+
+    For ``cross_entropy``: if a training dataset is supplied, the empirical
+    ab-bin distribution is estimated from it (and cached to
+    ``<models_deep>/empirical_ab_distribution.npy``) so the class-rebalancing
+    weights actually rebalance — without this, ``ClassRebalancedCELoss`` would
+    fall back to uniform weights and the model would converge to desaturated
+    sepia output.
 
     Args:
         cfg: dict with cfg["deep_learning"]["loss"] specifying loss type.
         quantizer: ABQuantizer instance (required for cross_entropy loss).
+        train_dataset: Optional dataset used to compute the empirical
+            distribution. If omitted, weights stay uniform — kept for
+            backwards compatibility with tests/scripts that don't pass it.
 
     Returns:
         nn.Module loss function.
@@ -128,7 +139,20 @@ def build_loss(cfg, quantizer=None):
     if loss_type == "cross_entropy":
         if quantizer is None:
             raise ValueError("ABQuantizer required for cross_entropy loss")
-        class_weights = quantizer.compute_class_weights()
+
+        empirical_dist = None
+        if train_dataset is not None:
+            from .quantize import compute_empirical_distribution
+            sample_size = int(cfg["deep_learning"].get("class_weight_sample_size", 1000))
+            models_dir = cfg["paths"].get("models_deep", "models/deep_learning")
+            cache_path = os.path.join(models_dir, "empirical_ab_distribution.npy")
+            empirical_dist = compute_empirical_distribution(
+                train_dataset, quantizer,
+                max_samples=sample_size,
+                cache_path=cache_path,
+            )
+
+        class_weights = quantizer.compute_class_weights(empirical_dist=empirical_dist)
         return ClassRebalancedCELoss(quantizer, class_weights)
     elif loss_type == "huber":
         return HuberColorLoss(delta=1.0)

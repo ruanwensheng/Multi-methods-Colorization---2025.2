@@ -88,16 +88,17 @@ def main():
         except Exception as e:
             print(f"Warning: Could not load pretrained weights: {e}")
 
-    # Loss
-    loss_fn = build_loss(cfg, quantizer=quantizer)
-    print(f"Loss: {type(loss_fn).__name__}")
-
-    # Data
+    # Data — load first so the loss factory can compute empirical class weights.
     train_loader, val_loader, _ = get_dataloaders(cfg)
     if train_loader is None:
         print("ERROR: No training data found. Run 'python tools/download_coco.py' first.")
         sys.exit(1)
     print(f"Train: {len(train_loader.dataset)} images, Val: {len(val_loader.dataset) if val_loader else 0} images")
+
+    # Loss — pass the train dataset so ClassRebalancedCELoss gets a real
+    # empirical ab distribution (not the silent-uniform fallback).
+    loss_fn = build_loss(cfg, quantizer=quantizer, train_dataset=train_loader.dataset)
+    print(f"Loss: {type(loss_fn).__name__}")
 
     # MLflow
     if mlflow is not None:
