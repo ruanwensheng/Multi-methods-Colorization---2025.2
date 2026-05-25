@@ -22,6 +22,10 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Pin caches to project drive BEFORE torch/HF imports — keeps C: from filling.
+from src.deep_learning.bootstrap import setup_caches
+setup_caches()
+
 from src.deep_learning.utils import load_config, compute_metrics
 from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.pretrained import get_comparison_models

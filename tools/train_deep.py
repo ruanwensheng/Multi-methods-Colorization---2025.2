@@ -15,6 +15,12 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# MUST come before torch/diffusers/HF imports so caches land on the project
+# drive (D:) instead of filling C: with model downloads. Crashed training v3
+# at validation with WinError 1455 when C: hit 0 bytes free.
+from src.deep_learning.bootstrap import setup_caches
+setup_caches()
+
 import torch
 
 try:

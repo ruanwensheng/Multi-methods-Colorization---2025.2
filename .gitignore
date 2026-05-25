@@ -36,3 +36,13 @@ references/*.docx
 
 # Temp files
 .tmp/
+
+# Local caches redirected off C: drive (HF hub, torch hub, etc.)
+.cache/
+
+# Local secrets (HF token, etc.) — only the template is committed
+.env
+
+# Local runtime / logs / results — never commit
+logs/
+results/

@@ -21,6 +21,10 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Pin caches to project drive BEFORE torch/HF imports — keeps C: from filling.
+from src.deep_learning.bootstrap import setup_caches
+setup_caches()
+
 from src.deep_learning.utils import load_config, compute_metrics, visualize_result, rgb_to_lab, lab_to_rgb
 from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.stats import bootstrap_ci, format_metric

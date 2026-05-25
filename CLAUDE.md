@@ -47,6 +47,10 @@ results/deep_learning/ # metrics/, comparison/, figures/
 - **Python:** 3.10+, PyTorch 2.x with CUDA 12.1
 - **Tracking:** MLflow (experiment: `deep-colorization`)
 - **Tests:** `pytest tests/ -v --timeout=60`
+- **Caches** (HF / torch hub): redirected to `<project>/.cache/` (gitignored, on D:).
+  All entry points in `tools/` call `bootstrap.setup_caches()` before any
+  torch/HF import. Don't let model downloads land in `C:\Users\...\.cache\` —
+  C: is small and a full C: crashes training with WinError 1455.
 
 ## The 5 Model Variants
 
