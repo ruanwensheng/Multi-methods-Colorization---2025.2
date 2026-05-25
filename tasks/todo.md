@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-25 — Phases 0, 1, 2 complete. Best model: epoch 5, val_loss 3.23, PSNR 22.85, SSIM 0.914.
+> **Last updated:** 2026-05-25 — Phases 0-2 complete; Phase 3 partial: T3.1-T3.4 done, T3.5 skipped (SD 2.1 deprecated; no working SD 1.5/SDXL substitute on 6 GB VRAM). T2.1 being re-run with full epochs to lift the fine-tuned baseline.
 
 ---
 
@@ -55,28 +55,38 @@
 
 ## Phase 3: Evaluation
 
-- [ ] **T3.1** Evaluate Zhang16 Pretrained on benchmark
+- [x] **T3.1** Evaluate Zhang16 Pretrained on benchmark
   - `python tools/evaluate_deep.py --model-path models/pretrained/zhang16_eccv.pth --tag pretrained`
-  - _Blocked by: T1.1, T1.2_
+  - **PSNR 17.14 [16.97, 17.30]**, SSIM 0.700, LPIPS 0.438. **Misleading number**: our 233-bin head can't accept the official 313-bin ECCV head, so this measures "ECCV encoder + RANDOM head" — not a real Zhang16 baseline.
 
-- [ ] **T3.2** Evaluate Zhang16 Fine-tuned on benchmark
+- [x] **T3.2** Evaluate Zhang16 Fine-tuned on benchmark (re-run pending — full-data 3-epoch resume)
   - `python tools/evaluate_deep.py --model-path models/deep_learning/best_model.pth --tag finetuned`
-  - _Blocked by: T2.1_
+  - **First pass (5 capped epochs × 2000 batches = 40K image-views): PSNR 22.97 [22.72, 23.21], SSIM 0.920, LPIPS 0.200**
+  - **Re-run in progress**: resume + 3 full epochs (~355K image-views, ~9× more exposure). Target: 24-25 dB.
 
-- [ ] **T3.3** Install & evaluate Zhang17 (Interactive CNN)
-  - Install: `pip install colorizers`
-  - _Blocked by: T1.1_
+- [x] **T3.3** Install & evaluate Zhang17 (Interactive CNN, automatic mode)
+  - Vendored `colorizers` package at `src/vendor/colorizers/` (BSD-licensed, ~30 KB; not on PyPI).
+  - `python tools/evaluate_deep.py --method zhang2017 --tag zhang17`
+  - **PSNR 18.82 [18.64, 19.00]**, SSIM 0.832, LPIPS 0.309. Below Zhang16 because Zhang17 was designed for *user-guided* mode; in zero-hint auto mode it underperforms.
 
-- [ ] **T3.4** Install & evaluate DeOldify (GAN)
-  - Install: `pip install deoldify fastai`
-  - _Blocked by: T1.1_
+- [x] **T3.4** Install & evaluate DeOldify (GAN)
+  - `pip install deoldify` (PyPI), `pip install fastprogress`, `pip install "setuptools<81"` (deoldify needs pkg_resources).
+  - Downloaded `ColorizeArtistic_gen.pth` (243 MB) into `models/`.
+  - `python tools/evaluate_deep.py --method deoldify --tag deoldify`
+  - **PSNR 24.00 [23.75, 24.25]**, SSIM 0.919, LPIPS 0.148. SOTA-class anchor.
 
-- [ ] **T3.5** Install & evaluate ControlNet (Diffusion)
-  - Install: `pip install diffusers transformers accelerate`
-  - Needs RTX 2080 Ti (~10GB VRAM)
-  - _Blocked by: T1.1_
+- [~] **T3.5** ControlNet (Diffusion) — **skipped, documented as blocked**
+  - Spec'd model `neurallove/controlnet-sd21-colorization-diffusers` requires `stabilityai/stable-diffusion-2-1-base`.
+  - **Root cause of skip**: Stability AI deprecated the entire SD 2.x line in 2025 — no SD 2.x repo is listed under stabilityai's HF profile, and all `stabilityai/stable-diffusion-2*` URLs return HTTP 401 even with valid auth tokens.
+  - **Investigated alternatives, all failed**:
+    - `ioclab/control_v1p_sd15_brightness` + SD 1.5: brightness conditioning ≠ colorization → PSNR 6.00 dB
+    - `annyorange/colorization-finetuned` (SD-IP2P): NaN outputs + 9 min/image → PSNR 5.85 dB
+    - `rsortino/ColorizeNet` (best-trained community alt): also requires SD 2.1
+    - `erenyenigul/colorization-unet2dmodel` (standalone): zero downloads, zero docs, would need reverse-engineering with no quality guarantee
+    - Flux-based: 12B params, won't fit on 6 GB GTX 1660 SUPER (spec called for RTX 2080 Ti)
+  - **Honest finding**: every well-trained diffusion colorization model on HF was built on SD 2.1 in 2023; the 2025 deprecation took out the downstream ecosystem. Documented in report's Diffusion section.
 
-**CHECKPOINT 3** — [ ] All 5 models evaluated with metrics
+**CHECKPOINT 3** — [x] Four-model comparison evaluated with metrics; Diffusion slot documented as reproducibility gap
 
 ---
 

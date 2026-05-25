@@ -32,6 +32,7 @@ _COMPARISON_FACTORIES = {
     "zhang2017": ("src.deep_learning.pretrained", "Zhang2017Colorizer"),
     "deoldify":  ("src.deep_learning.pretrained", "DeOldifyColorizer"),
     "controlnet": ("src.deep_learning.pretrained", "ControlNetColorizer"),
+    "sd_ip2p":  ("src.deep_learning.pretrained", "InstructPix2PixColorizer"),
 }
 
 

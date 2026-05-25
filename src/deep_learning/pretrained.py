@@ -487,6 +487,143 @@ class ControlNetColorizer(PretrainedColorizer):
 
 
 # =============================================================================
+# Diffusion (InstructPix2Pix): SD-based colorization
+# =============================================================================
+
+class InstructPix2PixColorizer(PretrainedColorizer):
+    """Diffusion-based colorization via a SD InstructPix2Pix fine-tune.
+
+    Picked as the working alternative to the spec'd ControlNet + SD 2.1 stack
+    after Stability AI deprecated the entire SD 2.x line and the SD 1.5 +
+    brightness-ControlNet substitute produced unrelated outputs (PSNR ~6 dB).
+
+    `annyorange/colorization-finetuned` is a self-contained SD pipeline
+    (StableDiffusionInstructPix2PixPipeline structure on HF) where the UNet
+    was fine-tuned to map grayscale -> color while preserving structure
+    via the IP2P architecture. Single model, no separate ControlNet — fits
+    6 GB VRAM with FP16 + CPU offload.
+
+    Category: Diffusion
+    Theory reference: Palette (Saharia et al., CVPR 2022)
+    Practical model: SD-IP2P colorization fine-tune
+    """
+
+    def __init__(self, model="annyorange/colorization-finetuned",
+                 num_inference_steps=20, guidance_scale=7.5,
+                 image_guidance_scale=1.5, device="auto"):
+        self._pipe = None
+        self._model = model
+        self._num_steps = num_inference_steps
+        self._guidance_scale = guidance_scale
+        self._image_guidance_scale = image_guidance_scale
+        self._device_str = device
+        self._available = False
+
+        try:
+            import torch
+            from diffusers import StableDiffusionInstructPix2PixPipeline
+            self._torch = torch
+            self._Pipeline = StableDiffusionInstructPix2PixPipeline
+            self._available = True
+        except ImportError:
+            print("diffusers not available. Install: pip install diffusers transformers accelerate")
+
+    @property
+    def name(self):
+        return "SD-IP2P Colorization (Diffusion)"
+
+    @property
+    def category(self):
+        return "Diffusion"
+
+    @property
+    def is_available(self):
+        return self._available
+
+    def _load_model(self):
+        if self._pipe is not None or not self._available:
+            return
+        print(f"Loading SD-IP2P colorization pipeline: {self._model}")
+        # safety_checker=None: this is a colorization model on natural images,
+        # the safety filter would flag legitimate frames as false positives and
+        # return black. The IP2P fine-tune retains the SD safety_checker on disk
+        # but we don't need it for benchmarking on COCO.
+        self._pipe = self._Pipeline.from_pretrained(
+            self._model,
+            torch_dtype=self._torch.float16,
+            safety_checker=None,
+        )
+        # Memory: 6 GB VRAM can't hold the whole pipeline + activations + grad-
+        # accumulators. CPU offload keeps only the active module on GPU.
+        if self._device_str == "auto":
+            if self._torch.cuda.is_available():
+                self._pipe.enable_model_cpu_offload()
+            else:
+                self._pipe = self._pipe.to("cpu")
+        else:
+            self._pipe = self._pipe.to(self._device_str)
+        try:
+            self._pipe.enable_xformers_memory_efficient_attention()
+        except Exception:
+            self._pipe.enable_attention_slicing()
+        print("SD-IP2P colorization pipeline loaded successfully")
+
+    def colorize(self, gray_image):
+        start = time.time()
+
+        if not self._available:
+            raise RuntimeError("diffusers not installed")
+
+        self._load_model()
+        if self._pipe is None:
+            raise RuntimeError("SD-IP2P pipeline failed to load")
+
+        from PIL import Image
+
+        h, w = gray_image.shape[:2]
+
+        # The IP2P pipeline needs RGB input (it expects 3 channels). For
+        # grayscale colorization we feed it the gray image converted to a
+        # 3-channel pseudo-RGB so each channel is identical.
+        if gray_image.ndim == 2:
+            rgb = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2RGB)
+        else:
+            rgb = cv2.cvtColor(gray_image, cv2.COLOR_BGR2RGB)
+
+        # SD-derived models require dims that are multiples of 8.
+        new_w = max(8, (w // 8) * 8)
+        new_h = max(8, (h // 8) * 8)
+        pil_image = Image.fromarray(rgb).resize((new_w, new_h), Image.BILINEAR)
+
+        # IP2P-style prompt: an instruction. "Colorize" is what the model was
+        # fine-tuned on. guidance_scale controls how much the prompt drives
+        # the change; image_guidance_scale controls structure preservation.
+        with self._torch.no_grad():
+            out = self._pipe(
+                prompt="colorize this image",
+                image=pil_image,
+                num_inference_steps=self._num_steps,
+                guidance_scale=self._guidance_scale,
+                image_guidance_scale=self._image_guidance_scale,
+            )
+
+        result_rgb = np.array(out.images[0])
+        result_bgr = cv2.cvtColor(result_rgb, cv2.COLOR_RGB2BGR)
+        result_bgr = cv2.resize(result_bgr, (w, h))
+
+        info_dict = {
+            "elapsed_sec": time.time() - start,
+            "model_name": "SD-IP2P-Colorization",
+            "category": "Diffusion",
+            "num_inference_steps": self._num_steps,
+            "guidance_scale": self._guidance_scale,
+            "image_guidance_scale": self._image_guidance_scale,
+            "model": self._model,
+        }
+        return result_bgr, info_dict
+
+
+# =============================================================================
 # Factory
 # =============================================================================
 

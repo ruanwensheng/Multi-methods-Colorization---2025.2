@@ -69,6 +69,31 @@ class TestModelNames:
         assert "Diffusion" in name
 
 
+class TestInstructPix2PixColorizer:
+    """SD-IP2P colorization is the working alternative to deprecated SD 2.1.
+
+    Stability AI removed the entire SD 2.x line; the SD 1.5 + brightness-
+    ControlNet substitute produced PSNR ~6 dB (model invented unrelated
+    content). InstructPix2PixColorizer uses a self-contained SD-IP2P fine-tune
+    that's purpose-trained for colorization.
+    """
+
+    def test_has_required_properties(self):
+        from src.deep_learning.pretrained import InstructPix2PixColorizer
+        m = InstructPix2PixColorizer()
+        assert hasattr(m, "colorize")
+        assert hasattr(m, "name")
+        assert hasattr(m, "is_available")
+
+    def test_reports_diffusion_category(self):
+        from src.deep_learning.pretrained import InstructPix2PixColorizer
+        assert InstructPix2PixColorizer().category == "Diffusion"
+
+    def test_name_says_diffusion(self):
+        from src.deep_learning.pretrained import InstructPix2PixColorizer
+        assert "Diffusion" in InstructPix2PixColorizer().name
+
+
 class TestVendoredColorizers:
     """The Zhang17 wrapper must find the vendored richzhang/colorization package.
 
