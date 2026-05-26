@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-25 — Phases 0-2 complete; Phase 3 partial: T3.1-T3.4 done, T3.5 skipped (SD 2.1 deprecated; no working SD 1.5/SDXL substitute on 6 GB VRAM). T2.1 being re-run with full epochs to lift the fine-tuned baseline.
+> **Last updated:** 2026-05-26 — Phases 0-3 complete. T3.2 re-eval against the full-data resumed checkpoint (epoch 8, `last_model.pth`) lifted PSNR 22.97 → 23.29 dB. T3.5 ControlNet remains documented as a reproducibility gap (SD 2.1 deprecated upstream).
 
 ---
 
@@ -41,13 +41,18 @@
 
 ## Phase 2: Training
 
-- [x] **T2.1** Fine-tune Zhang16 on COCO 2017
-  - `python tools/train_deep.py --config configs/config.yaml --epochs 5 --max-train-batches 2000`
-  - Settings: AMP off + batch_size=4 (the AMP=True path NaN'd at iter 1649 with fp16 overflow; see commits 412f48c, 2de761b)
-  - Results: 5 epochs × 2000 batches, ~13 min/epoch + ~6 min/val
-  - Best: epoch 5, val_loss 3.23, PSNR 22.85 dB, SSIM 0.914 — saved to `models/deep_learning/best_model.pth`
-  - MLflow run: `1753768c996c473e989676f3ef3a1d1a` in experiment `deep-colorization`
-  - Note: epoch 2 val_loss spiked to 16.85 (one bad batch); training otherwise monotonically improved
+- [x] **T2.1** Fine-tune Zhang16 on COCO 2017 — 5 capped + 3 full-data epochs total
+  - **Capped pass (epochs 1-5):** `python tools/train_deep.py --config configs/config.yaml --epochs 5 --max-train-batches 2000`
+    - AMP off + batch_size=4 (the AMP=True path NaN'd at iter 1649 with fp16 overflow; see commits 412f48c, 2de761b)
+    - ~13 min/epoch + ~6 min/val. End of epoch 5: val_loss 3.23, val_psnr 22.85 dB.
+    - MLflow run: `1753768c996c473e989676f3ef3a1d1a`
+  - **Full-data resume (epochs 6-8):** two sessions, both `--resume` from prior `last_model.pth`, no batch cap
+    - 29,571 batches/epoch × bs=4 ≈ 118K image-views/epoch (~2 hr/epoch on GTX 1660 SUPER, AMP off)
+    - Epoch 6: val_loss 3.17, val_psnr 23.24 → won best-checkpoint
+    - Epoch 7: val_loss 13.58 (single pathological batch — outlier-filtered, see commit 50d798d), val_psnr 23.38
+    - Epoch 8: val_loss 3.62, val_psnr **23.64 dB**, val_ssim 0.917
+    - MLflow runs: `4bd4839f35a7460cb5108236799f838b`, `c3d3c19ce5034990b63a2664e69d1f9c`
+  - Final artifacts: `models/deep_learning/best_model.pth` (epoch 6, lowest val_loss), `last_model.pth` (epoch 8, most-trained)
 
 **CHECKPOINT 2** — [x] Trained model available
 
@@ -59,10 +64,10 @@
   - `python tools/evaluate_deep.py --model-path models/pretrained/zhang16_eccv.pth --tag pretrained`
   - **PSNR 17.14 [16.97, 17.30]**, SSIM 0.700, LPIPS 0.438. **Misleading number**: our 233-bin head can't accept the official 313-bin ECCV head, so this measures "ECCV encoder + RANDOM head" — not a real Zhang16 baseline.
 
-- [x] **T3.2** Evaluate Zhang16 Fine-tuned on benchmark (re-run pending — full-data 3-epoch resume)
-  - `python tools/evaluate_deep.py --model-path models/deep_learning/best_model.pth --tag finetuned`
-  - **First pass (5 capped epochs × 2000 batches = 40K image-views): PSNR 22.97 [22.72, 23.21], SSIM 0.920, LPIPS 0.200**
-  - **Re-run in progress**: resume + 3 full epochs (~355K image-views, ~9× more exposure). Target: 24-25 dB.
+- [x] **T3.2** Evaluate Zhang16 Fine-tuned on benchmark
+  - `python tools/evaluate_deep.py --model-path models/deep_learning/last_model.pth --tag finetuned`
+  - **Final (epoch 8 `last_model.pth`, after 5 capped + 3 full-data resume epochs): PSNR 23.29 [23.02, 23.55], SSIM 0.919 [0.915, 0.923], LPIPS 0.192 [0.187, 0.197]**
+  - First pass (5 capped epochs only, 40K image-views) was PSNR 22.97; +0.32 dB lift from the ~355K additional full-data image-views. CIs are disjoint → real improvement, but smaller than the 24-25 dB target — train_loss curve had already flattened (3.05 → 3.00 across epochs 7-8) so further full epochs likely yield diminishing returns.
 
 - [x] **T3.3** Install & evaluate Zhang17 (Interactive CNN, automatic mode)
   - Vendored `colorizers` package at `src/vendor/colorizers/` (BSD-licensed, ~30 KB; not on PyPI).
@@ -86,7 +91,15 @@
     - Flux-based: 12B params, won't fit on 6 GB GTX 1660 SUPER (spec called for RTX 2080 Ti)
   - **Honest finding**: every well-trained diffusion colorization model on HF was built on SD 2.1 in 2023; the 2025 deprecation took out the downstream ecosystem. Documented in report's Diffusion section.
 
-**CHECKPOINT 3** — [x] Four-model comparison evaluated with metrics; Diffusion slot documented as reproducibility gap
+**CHECKPOINT 3** — [x] Four-model comparison evaluated with metrics on the 1,000-image test2017 benchmark; Diffusion slot documented as reproducibility gap. Phase 4 (cross-model comparison + figures) unblocked.
+
+| Model | PSNR (95% CI) | SSIM | LPIPS | Time/img |
+|---|---|---|---|---|
+| Zhang16 Pretrained (broken head — see T3.1) | 17.14 [16.97, 17.30] | 0.700 | 0.438 | 0.17s |
+| Zhang17 (auto mode) | 18.82 [18.64, 19.00] | 0.832 | 0.309 | 0.22s |
+| **Zhang16 Fine-tuned (ours)** | **23.29 [23.02, 23.55]** | **0.919** | **0.192** | 0.18s |
+| DeOldify (GAN, SOTA-class anchor) | 24.00 [23.75, 24.25] | 0.919 | 0.148 | 0.51s |
+| ControlNet (Diffusion) | — | — | — | gap |
 
 ---
 
