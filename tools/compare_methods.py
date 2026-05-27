@@ -18,6 +18,8 @@ import csv
 import numpy as np
 import cv2
 from tqdm import tqdm
+import matplotlib
+matplotlib.use("Agg")  # save-only tool, never displays — keep it headless-safe
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,6 +32,233 @@ from src.deep_learning.utils import load_config, compute_metrics
 from src.deep_learning.colorizer import DeepColorizer
 from src.deep_learning.pretrained import get_comparison_models
 from src.deep_learning.stats import bootstrap_ci
+
+
+# User-facing slug -> patterns to substring-match against lowercased model names.
+# Each user slug expands to one or more candidate patterns; a model matches if
+# ANY pattern is a substring of its lowercased name. This handles the common
+# shorthand `zhang17` -> "Zhang 2017 (Interactive CNN)" where a literal substring
+# would miss because of the space inside "zhang 2017".
+_SLUG_ALIASES = {
+    "zhang17":   ["zhang 2017", "zhang17"],
+    "zhang2017": ["zhang 2017", "zhang2017"],
+    "zhang16":   ["zhang16", "zhang 2016"],
+    "zhang2016": ["zhang16", "zhang 2016"],
+}
+
+
+def filter_models(models, method_slugs):
+    """Filter a {name: colorizer} dict by case-insensitive substring slugs.
+
+    `method_slugs=None` returns the dict unchanged; an empty list returns {};
+    unknown slugs raise ValueError so a typo doesn't silently no-op the run.
+    Slug expansion via `_SLUG_ALIASES` lets `zhang17` match "Zhang 2017
+    (Interactive CNN)" despite the space — useful since the model names
+    aren't user-friendly slugs.
+    """
+    if method_slugs is None:
+        return models
+    method_slugs = [s.strip().lower() for s in method_slugs if s.strip()]
+    if not method_slugs:
+        return {}
+    kept = {}
+    matched = {s: False for s in method_slugs}
+    for name, model in models.items():
+        name_lc = name.lower()
+        for slug in method_slugs:
+            patterns = _SLUG_ALIASES.get(slug, [slug])
+            if any(p in name_lc for p in patterns):
+                kept[name] = model
+                matched[slug] = True
+                break
+    missing = [s for s, hit in matched.items() if not hit]
+    if missing:
+        raise ValueError(
+            f"--methods slug(s) not found in loaded models: {missing}. "
+            f"Available: {sorted(models)}"
+        )
+    return kept
+
+
+# =============================================================================
+# Aggregate the cross-model comparison from canonical per-model metrics
+# =============================================================================
+#
+# Phase 4 does NOT re-run the models. Re-running on a small subset would produce
+# a second, weaker set of numbers that disagree with the Phase-3 table (which is
+# computed by evaluate_deep.py on the full 1,000-image test2017 benchmark). The
+# project's single source of truth is that benchmark (see CLAUDE.md and
+# docs/benchmark_methodology.md), so we assemble the comparison straight from
+# each model's evaluate_deep.py output.
+
+# (on-disk metrics tag, display name, paradigm category) in report narrative order.
+_EVALUATED_MODELS = [
+    ("pretrained", "Zhang16 Pretrained",           "CNN"),
+    ("finetuned",  "Zhang16 Fine-tuned (Ours)",    "CNN"),
+    ("zhang17",    "Zhang 2017 (Interactive CNN)", "Interactive CNN"),
+    ("deoldify",   "DeOldify (GAN)",               "GAN"),
+]
+
+# The spec'd 5th model. Every well-trained diffusion colorizer on HF was built on
+# the now-deprecated SD 2.1 (see tasks/todo.md T3.5), so the Diffusion slot is
+# recorded as a documented gap — never a fabricated metric row.
+_DIFFUSION_GAP = (
+    "ControlNet (Diffusion)",
+    "Diffusion",
+    "SD 2.1 deprecated upstream; no reproducible diffusion baseline (see T3.5).",
+)
+
+
+def aggregate_from_metrics(metrics_root):
+    """Assemble the cross-model comparison from per-model evaluate_deep.py outputs.
+
+    Reads each model's ``aggregate_metrics.json`` (mean/CI over the full
+    1,000-image benchmark) and ``test_metrics.csv`` (per-image rows). No model is
+    re-run, so numbers match the canonical Phase-3 table exactly.
+
+    Args:
+        metrics_root: dir containing one subdir per model tag (results/.../metrics).
+
+    Returns:
+        (summary, rows):
+          summary: dict display_name -> aggregate entry. Evaluated models carry
+                   ``status="ok"`` plus the evaluate_deep.py fields and a
+                   ``category``; the Diffusion slot is a ``status="gap"`` entry.
+          rows:    list of per-image dicts, each tagged with a ``model`` column
+                   (the display name) so notebook 04's groupby("model") works.
+    """
+    summary = {}
+    rows = []
+    for tag, display, category in _EVALUATED_MODELS:
+        agg_path = os.path.join(metrics_root, tag, "aggregate_metrics.json")
+        if not os.path.exists(agg_path):
+            continue  # model wasn't evaluated — skip rather than crash
+        with open(agg_path) as f:
+            entry = json.load(f)
+        entry["category"] = category
+        entry["status"] = "ok"
+        summary[display] = entry
+
+        csv_path = os.path.join(metrics_root, tag, "test_metrics.csv")
+        if os.path.exists(csv_path):
+            with open(csv_path, newline="") as f:
+                for r in csv.DictReader(f):
+                    rows.append({
+                        "image":       r.get("image", ""),
+                        "model":       display,
+                        "psnr":        r.get("psnr", ""),
+                        "ssim":        r.get("ssim", ""),
+                        "lpips":       r.get("lpips", ""),
+                        "elapsed_sec": r.get("elapsed_sec", ""),
+                    })
+
+    gap_name, gap_category, gap_reason = _DIFFUSION_GAP
+    summary[gap_name] = {"status": "gap", "category": gap_category, "reason": gap_reason}
+    return summary, rows
+
+
+def write_comparison_artifacts(summary, rows, output_dir):
+    """Write comparison_summary.json + comparison_metrics.csv. Returns their paths."""
+    os.makedirs(output_dir, exist_ok=True)
+    summary_path = os.path.join(output_dir, "comparison_summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2)
+
+    csv_path = os.path.join(output_dir, "comparison_metrics.csv")
+    fields = ["image", "model", "psnr", "ssim", "lpips", "elapsed_sec"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    return summary_path, csv_path
+
+
+# =============================================================================
+# Figures (T4.2)
+# =============================================================================
+
+def make_bar_chart(summary, save_path):
+    """Render PSNR/SSIM/LPIPS bar charts with 95% CI error bars for evaluated models.
+
+    Only ``status="ok"`` entries are plotted (the Diffusion gap has no numbers).
+    Bars are sorted best-first per metric (LPIPS is lower-is-better).
+    """
+    ok = {n: e for n, e in summary.items() if e.get("status") == "ok"}
+    panels = [("psnr", "PSNR (dB) — higher is better", False),
+              ("ssim", "SSIM — higher is better", False),
+              ("lpips", "LPIPS — lower is better", True)]
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(5 * len(panels), 4.5))
+    for ax, (key, title, lower_better) in zip(axes, panels):
+        items = [(n, e) for n, e in ok.items() if f"{key}_mean" in e]
+        items.sort(key=lambda kv: kv[1][f"{key}_mean"], reverse=not lower_better)
+        names = [n for n, _ in items]
+        means = [e[f"{key}_mean"] for _, e in items]
+        lo = [e[f"{key}_mean"] - e.get(f"{key}_ci_lo", e[f"{key}_mean"]) for _, e in items]
+        hi = [e.get(f"{key}_ci_hi", e[f"{key}_mean"]) - e[f"{key}_mean"] for _, e in items]
+        x = range(len(names))
+        ax.bar(x, means, yerr=[lo, hi], capsize=4,
+               color=plt.cm.viridis(np.linspace(0.15, 0.85, max(len(names), 1))))
+        ax.set_xticks(list(x))
+        ax.set_xticklabels(names, rotation=30, ha="right", fontsize=8)
+        ax.set_title(title, fontsize=10)
+        ax.grid(axis="y", alpha=0.3)
+    fig.suptitle("Cross-model comparison on the 1,000-image test2017 benchmark "
+                 "(error bars = 95% bootstrap CI)", fontsize=11)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def make_training_curves(training_log_path, save_path, loss_ymax=5.0):
+    """Plot fine-tuning curves from models/deep_learning/training_log.json.
+
+    Left panel: train/val loss vs epoch. The y-axis is capped at ``loss_ymax`` so
+    the curve stays readable — two val-loss spikes (pathological batches, see
+    commit 50d798d) would otherwise flatten everything; off-scale points are
+    annotated rather than dropped. Right panel: val PSNR vs epoch.
+    """
+    with open(training_log_path) as f:
+        log = json.load(f)
+    train = log.get("train_loss", [])
+    val = log.get("val_loss", [])
+    psnr = log.get("val_psnr", [])
+    epochs = list(range(1, len(train) + 1))
+
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+    axL.plot(epochs, train, "o-", label="train loss")
+    # Break the val line at off-scale outliers (NaN) so they don't draw vertical
+    # streaks; mark their true value with an annotation instead.
+    val_plot = [v if v <= loss_ymax else np.nan for v in val]
+    axL.plot(range(1, len(val) + 1), val_plot, "s-", label="val loss", color="tab:orange")
+    axL.set_ylim(min(train + [v for v in val if v <= loss_ymax]) - 0.1, loss_ymax)
+    for ep, v in zip(range(1, len(val) + 1), val):
+        if v > loss_ymax:  # off-scale outlier — annotate at the top of the axis
+            axL.annotate(f"{v:.1f}", xy=(ep, loss_ymax), xytext=(ep, loss_ymax - 0.3),
+                         ha="center", fontsize=7, color="tab:red",
+                         arrowprops=dict(arrowstyle="->", color="tab:red", lw=0.8))
+    axL.set_xlabel("epoch"); axL.set_ylabel("loss")
+    axL.set_title("Training / validation loss (val outliers clipped)")
+    axL.legend(); axL.grid(alpha=0.3)
+
+    if psnr:
+        axR.plot(range(1, len(psnr) + 1), psnr, "^-", color="tab:green")
+        best_ep = int(np.argmax(psnr)) + 1
+        axR.annotate(f"best {psnr[best_ep - 1]:.2f} dB (ep {best_ep})",
+                     xy=(best_ep, psnr[best_ep - 1]),
+                     xytext=(0.5, 0.1), textcoords="axes fraction", fontsize=8,
+                     arrowprops=dict(arrowstyle="->", lw=0.8))
+    axR.set_xlabel("epoch"); axR.set_ylabel("val PSNR (dB)")
+    axR.set_title("Validation PSNR")
+    axR.grid(alpha=0.3)
+
+    fig.suptitle("Zhang16 fine-tuning on COCO 2017", fontsize=11)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 def load_all_models(cfg, model_path=None, device="auto"):
@@ -119,6 +348,116 @@ def save_comparison_grid(gray, gt_rgb, results, save_path, img_name=""):
     plt.close(fig)
 
 
+def make_qualitative_grid(models, test_dir, image_names, save_path):
+    """Render rows=images x cols=[Input, *models, Ground Truth] into one PNG.
+
+    This re-runs the given models on a handful of benchmark images purely to
+    produce the visual figure — it computes no aggregate metrics, so the report's
+    quantitative table (from ``aggregate_from_metrics``) is unaffected. Models that
+    fail to produce a prediction are dropped from the columns rather than aborting.
+    """
+    per_image = []  # (img_name, gray, gt_rgb, {model_name: pred_rgb})
+    for img_name in image_names:
+        img_bgr = cv2.imread(os.path.join(test_dir, img_name))
+        if img_bgr is None:
+            continue
+        results, gray, gt_rgb = compare_on_image(models, img_bgr)
+        preds = {name: pred for name, (pred, _m, _t) in results.items()}
+        per_image.append((img_name, gray, gt_rgb, preds))
+
+    if not per_image:
+        raise RuntimeError("no benchmark images could be read for the qualitative grid")
+
+    # Keep only models that produced at least one prediction, in load order.
+    model_names = [m for m in models if any(m in p[3] for p in per_image)]
+    col_titles = ["Input"] + model_names + ["Ground Truth"]
+    n_rows, n_cols = len(per_image), len(col_titles)
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(2.6 * n_cols, 2.8 * n_rows))
+    axes = np.atleast_2d(axes)
+    for r, (_img_name, gray, gt_rgb, preds) in enumerate(per_image):
+        axes[r][0].imshow(gray, cmap="gray")
+        for c, m in enumerate(model_names, start=1):
+            if m in preds:
+                axes[r][c].imshow(preds[m])
+            else:
+                axes[r][c].text(0.5, 0.5, "n/a", ha="center", va="center", fontsize=8)
+        axes[r][-1].imshow(gt_rgb)
+        for c in range(n_cols):
+            axes[r][c].axis("off")
+            if r == 0:
+                axes[r][c].set_title(col_titles[c], fontsize=9)
+
+    fig.suptitle("Qualitative comparison on test2017 benchmark images", fontsize=11)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return [p[0] for p in per_image], model_names
+
+
+def _run_from_metrics(cfg, args):
+    """T4.1 + T4.2: assemble the comparison and figures from canonical per-model
+    metrics (no model re-run). Optionally renders the qualitative grid, which is
+    the only step that loads models (visual only)."""
+    metrics_dir = args.metrics_dir or os.path.join(cfg["paths"]["results_deep"], "metrics")
+    output_dir = args.output_dir or os.path.join(cfg["paths"]["results_deep"], "comparison")
+    figures_dir = args.figures_dir or os.path.join(cfg["paths"]["results_deep"], "figures")
+
+    print(f"Aggregating canonical per-model metrics from: {metrics_dir}")
+    summary, rows = aggregate_from_metrics(metrics_dir)
+    ok = [n for n, e in summary.items() if e.get("status") == "ok"]
+    gaps = [n for n, e in summary.items() if e.get("status") == "gap"]
+    if not ok:
+        print(f"ERROR: no per-model aggregate_metrics.json found under {metrics_dir}")
+        sys.exit(1)
+
+    summary_path, csv_path = write_comparison_artifacts(summary, rows, output_dir)
+    print(f"  evaluated models: {ok}")
+    print(f"  documented gaps : {gaps}")
+    print(f"  wrote {summary_path}")
+    print(f"  wrote {csv_path} ({len(rows)} per-image rows)")
+
+    print(f"{'='*70}\n{'Model':<30}{'PSNR':>10}{'SSIM':>10}{'LPIPS':>10}\n{'='*70}")
+    for name in ok:
+        e = summary[name]
+        print(f"{name:<30}{e.get('psnr_mean', float('nan')):>10.2f}"
+              f"{e.get('ssim_mean', float('nan')):>10.4f}{e.get('lpips_mean', float('nan')):>10.4f}")
+    print('='*70)
+
+    bar_path = os.path.join(figures_dir, "metrics_bar_chart.png")
+    make_bar_chart(summary, bar_path)
+    print(f"  wrote {bar_path}")
+
+    if os.path.exists(args.training_log):
+        curves_path = os.path.join(figures_dir, "training_curves.png")
+        make_training_curves(args.training_log, curves_path)
+        print(f"  wrote {curves_path}")
+    else:
+        print(f"  (skipped training curves — no log at {args.training_log})")
+
+    if args.qualitative_grid > 0:
+        test_dir = args.test_dir or os.path.join(cfg["paths"]["data_coco"], "benchmark")
+        print(f"\nRendering qualitative grid ({args.qualitative_grid} images) — loads models...")
+        models = load_all_models(cfg, args.model_path, args.device)
+        # The grid is a visual, not a metric source: render whatever loaded but
+        # drop the Diffusion gap substitute (it yields ~6 dB; see T3.5). Skip,
+        # don't crash, if a model's deps are missing in this environment.
+        models = {n: m for n, m in models.items()
+                  if "controlnet" not in n.lower() and "diffusion" not in n.lower()}
+        if not models:
+            print("  no comparison models available in this env — skipping grid")
+        else:
+            extensions = {".jpg", ".jpeg", ".png"}
+            names = sorted(f for f in os.listdir(test_dir)
+                           if os.path.splitext(f)[1].lower() in extensions)[:args.qualitative_grid]
+            grid_path = os.path.join(figures_dir, "qualitative_grid.png")
+            used_imgs, used_models = make_qualitative_grid(models, test_dir, names, grid_path)
+            print(f"  wrote {grid_path} ({len(used_imgs)} imgs x {len(used_models)} models: {used_models})")
+
+    print(f"\nDone. Comparison in {output_dir}, figures in {figures_dir}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compare colorization methods")
     parser.add_argument("--model-path", default="models/deep_learning/best_model.pth",
@@ -128,9 +467,35 @@ def main():
     parser.add_argument("--max-images", type=int, default=50, help="Max images to compare")
     parser.add_argument("--config", default="configs/config.yaml", help="Config file")
     parser.add_argument("--device", default="auto", help="Device")
+    parser.add_argument(
+        "--methods", default=None,
+        help="Comma-separated subset of model slugs to include "
+             "(e.g. 'zhang16,zhang17,deoldify'). Case-insensitive substring "
+             "match against loaded model names. Default: all loaded.",
+    )
+    parser.add_argument(
+        "--from-metrics", action="store_true",
+        help="Assemble the comparison + figures from the canonical per-model "
+             "evaluate_deep.py outputs (full 1,000-image benchmark) instead of "
+             "re-running the models. This is the single-source-of-truth path.",
+    )
+    parser.add_argument("--metrics-dir", default=None,
+                        help="Per-model metrics dir (default: results_deep/metrics).")
+    parser.add_argument("--figures-dir", default=None,
+                        help="Figure output dir (default: results_deep/figures).")
+    parser.add_argument("--training-log", default="models/deep_learning/training_log.json",
+                        help="Training log JSON for the training-curves figure.")
+    parser.add_argument("--qualitative-grid", type=int, default=0,
+                        help="With --from-metrics: re-run models on N benchmark "
+                             "images to render qualitative_grid.png (0 = skip).")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+
+    if args.from_metrics:
+        _run_from_metrics(cfg, args)
+        return
+
     test_dir = args.test_dir or os.path.join(cfg["paths"]["data_coco"], "benchmark")
     output_dir = args.output_dir or os.path.join(cfg["paths"]["results_deep"], "comparison")
 
@@ -145,6 +510,10 @@ def main():
     # Load models
     print("Loading models...")
     models = load_all_models(cfg, args.model_path, args.device)
+    if args.methods is not None:
+        slugs = [s for s in args.methods.split(",")]
+        models = filter_models(models, slugs)
+        print(f"  Filtered to: {list(models)}")
     print(f"  {len(models)} model(s) loaded\n")
 
     # Get test images
@@ -237,7 +606,9 @@ def main():
     csv_path = os.path.join(output_dir, "comparison_metrics.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["image", "method", "psnr", "ssim", "lpips", "elapsed_sec"])
+        # `model` (not `method`) so notebook 04's df.groupby("model") works
+        # regardless of whether the CSV came from this path or --from-metrics.
+        writer.writerow(["image", "model", "psnr", "ssim", "lpips", "elapsed_sec"])
         for name, results_list in all_results.items():
             for r in results_list:
                 writer.writerow([r["image"], name, r["psnr"], r["ssim"], r.get("lpips", ""), r["elapsed_sec"]])
