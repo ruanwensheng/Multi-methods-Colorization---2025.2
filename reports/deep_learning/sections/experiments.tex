@@ -1,0 +1,85 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Dataset and benchmark}
+We use COCO~2017~\cite{lin2014coco}: $118{,}287$ training images, $5{,}000$
+validation images, and $40{,}670$ held-out \texttt{test2017} images. Fine-tuning
+uses \texttt{train2017}; the \texttt{val2017} split drives best-checkpoint
+selection during training. Because \texttt{val2017} is therefore ``seen'' by the
+training procedure, evaluating on it would leak. Our benchmark is instead a
+\emph{stratified $1{,}000$-image subset of \texttt{test2017}} (fixed seed
+$42$), which neither fine-tuning nor checkpoint selection ever touches. All
+models are scored on this identical benchmark.
+
+\subsection{Models compared}
+Table~\ref{tab:models} lists the five model variants spanning the four
+paradigms. Two are our own CNN (the pretrained encoder and our COCO-fine-tuned
+model); the other three are pretrained third-party systems wrapped behind a
+unified \texttt{colorize(gray)} interface so they receive identical inputs.
+
+\begin{table}[t]
+\centering
+\caption{The five model variants evaluated on the shared benchmark.}
+\label{tab:models}
+\begin{tabular}{@{}llc@{}}
+\toprule
+Model & Paradigm & Ours? \\
+\midrule
+Zhang16 Pretrained (ECCV)      & CNN             & reimpl. \\
+Zhang16 Fine-tuned (COCO 2017) & CNN             & yes \\
+Zhang17 (automatic mode)       & Interactive CNN & no \\
+DeOldify (NoGAN)               & GAN             & no \\
+ControlNet + Stable Diffusion  & Diffusion       & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Metrics and uncertainty}
+We report three complementary metrics, all computed in RGB against the ground
+truth: PSNR (pixel fidelity), SSIM (structural similarity), and
+LPIPS~\cite{zhang2018lpips} (learned perceptual distance; lower is better).
+Because a single mean hides sampling variability, every metric is reported as
+\texttt{mean [95\% CI]}, where the confidence interval is a percentile bootstrap
+over the $1{,}000$ benchmark images ($10{,}000$ resamples, seed~$42$).
+
+\subsection{Training configuration}
+Our model is initialized from the ECCV encoder weights, but its $233$-bin
+classification head is trained from scratch---the official head has $313$ bins
+and is dimensionally incompatible with our gamut (Section~\ref{sec:method}).
+Table~\ref{tab:hparams} lists the hyperparameters. Mixed precision was disabled
+after the fp16 path overflowed to NaN mid-epoch; training therefore runs in
+fp32 at batch size $4$, which fits the $6$\,GB GTX~1660~SUPER. We trained for
+eight epochs in two phases: five batch-capped epochs followed by three
+full-data epochs resumed from the prior checkpoint. Fig.~\ref{fig:curves} shows
+the loss and validation-PSNR trajectories.
+
+\begin{table}[t]
+\centering
+\caption{Fine-tuning hyperparameters.}
+\label{tab:hparams}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Setting & Value \\
+\midrule
+Optimizer        & Adam, $\beta=(0.9,0.999)$, weight decay $0$ \\
+Learning rate    & $2\times10^{-4}$, StepLR (step $20$, $\gamma=0.5$) \\
+Batch size       & $4$ (fp32; AMP disabled) \\
+Gradient clip    & $1.0$ (max-norm) \\
+Input resolution & $256\times256$ \\
+Quantization     & $Q=233$ bins; soft target, $\sigma=5$, $5$-NN \\
+Rebalancing      & $\lambda=0.5$ \\
+Decoder          & annealed mean, $T=0.38$ \\
+Epochs           & $8$ ($5$ capped $+\,3$ full-data) \\
+Hardware         & GTX~1660~SUPER (6\,GB), PyTorch~2.5.1+cu121 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{training_curves.png}
+  \caption{Fine-tuning on COCO~2017. Left: training and validation loss; two
+  validation spikes from pathological batches are off-scale and annotated.
+  Right: validation PSNR climbs to $23.6$\,dB by epoch~8.}
+  \label{fig:curves}
+\end{figure}

@@ -1,0 +1,28 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We reimplemented the Zhang~2016 classification CNN, fine-tuned it on COCO~2017,
+and compared four deep-learning colorization paradigms on a single
+leakage-controlled $1{,}000$-image \texttt{test2017} benchmark, with every
+metric reported as \texttt{mean [95\% CI]}. Our fine-tuned model reaches PSNR
+$23.29$\,dB, SSIM $0.919$, and LPIPS $0.192$, matching the SOTA-class DeOldify
+on structure, trailing it modestly on pixel fidelity and perceptual quality, and
+beating it by roughly $2.8\times$ on inference speed.
+
+Our practical recommendations follow directly:
+\begin{itemize}
+  \item \textbf{Automatic, latency-sensitive colorization} --- use a
+        well-trained classification CNN; it is fast, stable, and close to GAN
+        quality.
+  \item \textbf{Maximum perceptual quality / photo restoration} --- use a GAN
+        such as DeOldify, accepting the higher latency.
+  \item \textbf{Human-in-the-loop control} --- use an interactive CNN
+        \emph{with} hints; do not expect it to perform well unguided.
+\end{itemize}
+
+Two avenues would strengthen the study. First, re-deriving the $313$-bin gamut
+hull would let us load the official ECCV head and report a faithful pretrained
+baseline, isolating the true contribution of fine-tuning. Second, the diffusion
+slot should be revisited once a maintained colorization checkpoint exists that
+does not depend on the deprecated Stable~Diffusion~2.1 backbone, completing the
+four-paradigm comparison with a measured rather than inferred frontier point.

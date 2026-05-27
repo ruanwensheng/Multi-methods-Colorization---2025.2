@@ -1,0 +1,84 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{Quantitative comparison}
+Table~\ref{tab:results} reports the three metrics with $95\%$ bootstrap
+confidence intervals on the $1{,}000$-image \texttt{test2017} benchmark;
+Fig.~\ref{fig:bars} visualizes the same numbers. Four of the five model slots
+are populated; the diffusion slot is a documented gap discussed below.
+
+\begin{table*}[t]
+\centering
+\caption{Colorization quality on the $1{,}000$-image \texttt{test2017} benchmark,
+reported as \texttt{mean [95\% CI]} ($10{,}000$-resample bootstrap, seed~$42$).
+Best per column in \textbf{bold}.}
+\label{tab:results}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Model & PSNR\,(dB)\,$\uparrow$ & SSIM\,$\uparrow$ & LPIPS\,$\downarrow$ & Time/img\,(s) \\
+\midrule
+Zhang16 Pretrained (ECCV)$^{\dagger}$ & $17.14$ $[16.97, 17.30]$ & $0.700$ $[0.690, 0.709]$ & $0.438$ $[0.429, 0.447]$ & $0.17$ \\
+Zhang17 (automatic mode)              & $18.82$ $[18.64, 19.00]$ & $0.832$ $[0.827, 0.838]$ & $0.309$ $[0.304, 0.315]$ & $0.22$ \\
+Zhang16 Fine-tuned (ours)             & $23.29$ $[23.02, 23.55]$ & $\mathbf{0.919}$ $[0.915, 0.923]$ & $0.192$ $[0.187, 0.197]$ & $0.18$ \\
+DeOldify (GAN)                        & $\mathbf{24.00}$ $[23.75, 24.25]$ & $0.919$ $[0.915, 0.922]$ & $\mathbf{0.148}$ $[0.144, 0.152]$ & $0.51$ \\
+ControlNet (Diffusion)                & \multicolumn{4}{c}{--- reproducibility gap (see Sec.~\ref{sec:results}\,\&\,\ref{sec:discussion}) ---} \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+{\footnotesize $^{\dagger}$ Measures the ECCV encoder paired with our
+\emph{untrained} $233$-bin head (the official $313$-bin head is incompatible);
+it is \textbf{not} a faithful ECCV baseline---see text.}
+\end{table*}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{metrics_comparison.png}
+  \caption{PSNR, SSIM, and LPIPS across the four evaluated models; error bars are
+  $95\%$ bootstrap confidence intervals.}
+  \label{fig:bars}
+\end{figure}
+
+\subsection{Qualitative comparison}
+Fig.~\ref{fig:grid} shows colorizations on representative benchmark images. Our
+fine-tuned model and DeOldify produce coherent, naturally-colored results;
+DeOldify is the most saturated and closest to the ground truth, while ours is
+slightly more conservative on large ambiguous regions (skies, foliage).
+Zhang17 in automatic mode exhibits the characteristic color blotches and
+bleeding of a hint-driven model deprived of hints, which explains its low
+scores.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{qualitative_grid.png}
+  \caption{Qualitative comparison on \texttt{test2017} images. Columns: input,
+  Zhang16 fine-tuned (ours), Zhang17 (auto), DeOldify, ground truth.}
+  \label{fig:grid}
+\end{figure}
+
+\subsection{Analysis}
+\textbf{Fine-tuning is decisive.} Our COCO-fine-tuned model attains
+$23.29$\,dB---disjoint confidence intervals from every other CNN row. The large
+gap over the ``pretrained'' row, however, must be read with care: that row pairs
+the ECCV encoder with an \emph{untrained} $233$-bin head, because the official
+$313$-bin head cannot be loaded into our gamut. It therefore measures an
+encoder-plus-random-head, not the true ECCV model, and overstates how much
+fine-tuning alone contributes.
+
+\textbf{We approach the GAN anchor.} On PSNR and SSIM our model is statistically
+indistinguishable from DeOldify on SSIM ($0.919$ both) and within
+${\sim}0.7$\,dB on PSNR, while running at $0.18$\,s/image versus DeOldify's
+$0.51$\,s---roughly $2.8\times$ faster. The remaining gap is perceptual:
+DeOldify's LPIPS ($0.148$) is clearly better than ours ($0.192$), reflecting its
+richer, more confident saturation.
+
+\textbf{Automatic mode handicaps the interactive CNN.} Zhang17 was designed for
+user-guided use; with zero hints it underperforms even the conservative CNN,
+confirming that its strength lies in interactivity rather than autonomy.
+
+\textbf{The diffusion slot could not be reproduced.} The specified pipeline
+requires Stable~Diffusion~2.1, which Stability~AI deprecated upstream; every
+well-trained diffusion colorization checkpoint we found was built on that
+now-unavailable backbone. Substitutes (an SD~1.5 brightness-ControlNet and an
+SD-InstructPix2Pix fine-tune) produced unrelated or degenerate outputs
+(${\sim}6$\,dB PSNR) and would have poisoned the comparison, so we report the
+slot as an honest gap rather than a misleading number.

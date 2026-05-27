@@ -1,0 +1,66 @@
+%% Deep Learning Image Colorization — comparative study (feature/deep branch)
+%% Compile: pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}}
+
+\begin{document}
+
+\title{Deep Learning Approaches to Automatic Image Colorization:\\
+A Comparative Study of Four Paradigms on COCO 2017}
+
+\author{\IEEEauthorblockN{Minh Kwang}
+\IEEEauthorblockA{Computer Vision Course Project\\
+Deep Learning Method --- \texttt{feature/deep}\\
+Email: xuandat13062005@gmail.com}}
+
+\maketitle
+
+\begin{abstract}
+Automatic image colorization---predicting plausible chrominance for a grayscale
+input---has been attacked by four successive deep-learning paradigms: feed-forward
+CNNs, user-guided interactive CNNs, generative adversarial networks (GANs), and
+diffusion models. We reimplement the seminal classification-based CNN of Zhang
+\emph{et al.}~\cite{zhang2016colorful}, fine-tune it on COCO 2017, and benchmark
+it against three representative pretrained systems---an interactive
+CNN~\cite{zhang2017realtime} in automatic mode, the NoGAN
+DeOldify~\cite{antic2019deoldify}, and a ControlNet~\cite{zhang2023controlnet}
+diffusion pipeline---on a leakage-controlled, stratified 1{,}000-image subset of
+the COCO 2017 \texttt{test2017} split. All numbers are reported as
+\texttt{mean [95\% CI]} via a 10{,}000-resample percentile bootstrap. Our
+fine-tuned model reaches PSNR $23.29$\,dB / SSIM $0.919$ / LPIPS $0.192$,
+closing most of the gap to the SOTA-class GAN anchor ($24.00$\,dB) while running
+${\sim}2.8\times$ faster. We document an honest reproducibility gap in the
+diffusion slot, where the upstream Stable Diffusion 2.1 dependency has been
+deprecated. The study highlights that, for fully-automatic colorization on
+6\,GB-class hardware, a well-trained CNN remains a strong speed--quality
+compromise.
+\end{abstract}
+
+\begin{IEEEkeywords}
+image colorization, deep learning, convolutional neural networks, generative
+adversarial networks, diffusion models, CIE Lab, COCO 2017.
+\end{IEEEkeywords}
+
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

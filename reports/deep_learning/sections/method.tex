@@ -1,0 +1,92 @@
+\section{Method}
+\label{sec:method}
+
+We reimplement the Zhang~2016 classification CNN~\cite{zhang2016colorful}. This
+section describes the color representation, network, quantized objective, and
+decoder; training details follow in Section~\ref{sec:experiments}.
+
+\subsection{Color representation}
+We operate entirely in CIE~Lab. The luminance channel $L\in[0,100]$ is the
+network input (normalized to $[-1,1]$); the chrominance channels
+$(a,b)\in[-110,110]$ are the prediction target. Lab linearly separates lightness
+from color, so the model never has to reproduce structure already present in the
+input---it predicts only chrominance, which is then recombined with the original
+$L$ and converted back to RGB for display and metrics.
+
+\subsection{Network architecture}
+The network (Fig.~\ref{fig:arch}) is a fully-convolutional encoder of eight
+blocks (\texttt{conv1}--\texttt{conv8}), 31.6\,M parameters, with no pooling
+layers: spatial resolution is reduced by stride-2 convolutions and context is
+expanded by dilated convolutions. Blocks~1--3 downsample $256\times256$ input to
+$32\times32$ at 64/128/256 channels; blocks~4--7 hold $32\times32$ at 512
+channels, with dilation~2 in blocks~5--6 to enlarge the receptive field without
+further downsampling; block~8 upsamples once via a transposed convolution and
+ends in a $1\times1$ convolution producing $Q$ logits per spatial location.
+Every convolution is followed by ReLU, and each block by BatchNorm.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{architecture.png}
+  \caption{Zhang~2016 colorization network (our reimplementation). A
+  fully-convolutional, dilated encoder maps the luminance channel to a per-pixel
+  distribution over $Q=233$ quantized $ab$ bins; the annealed-mean decoder turns
+  that distribution into continuous chrominance.}
+  \label{fig:arch}
+\end{figure}
+
+\subsection{Quantized $ab$ palette}
+The $ab$ plane is discretized on a $10\times10$ grid and restricted to bins that
+map to valid sRGB colors at some lightness, yielding $Q=233$ in-gamut bins
+(Fig.~\ref{fig:abquant}). (The official Zhang implementation ships $313$ bins
+from a different gamut hull; our independently-computed grid yields $233$, a
+detail that matters in Section~\ref{sec:results}.) Ground-truth chrominance is
+\emph{soft-encoded}: each pixel's $(a,b)$ is assigned to its $5$ nearest bins
+with Gaussian weights ($\sigma=5$), giving a target distribution
+$Z\in[0,1]^{H\times W\times Q}$ rather than a one-hot label.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.78\columnwidth]{ab_quantization.png}
+  \caption{The $ab$ color space quantized into $233$ in-gamut bins (shown at
+  $L^{*}=70$). The network predicts a categorical distribution over these bins.}
+  \label{fig:abquant}
+\end{figure}
+
+\subsection{Class-rebalanced classification loss}
+Let $\widehat{Z}=\mathcal{G}(L)$ be the predicted per-pixel distribution. We
+minimize a multinomial cross-entropy between $\widehat{Z}$ and the soft target
+$Z$, reweighted to counter the strong prior toward desaturated colors:
+\begin{equation}
+  \mathcal{L}(\widehat{Z}, Z) =
+  -\sum_{h,w} v\!\left(Z_{h,w}\right)
+  \sum_{q=1}^{Q} Z_{h,w,q}\,\log \widehat{Z}_{h,w,q}.
+  \label{eq:loss}
+\end{equation}
+The pixel weight depends on the dominant ground-truth bin
+$q^{\star}=\arg\max_q Z_{h,w,q}$ through a rebalancing factor
+\begin{equation}
+  v(Z_{h,w}) = w_{q^{\star}},\qquad
+  w \;\propto\; \Big((1-\lambda)\,\widetilde{p} + \tfrac{\lambda}{Q}\Big)^{-1},
+  \label{eq:rebalance}
+\end{equation}
+where $\widetilde{p}$ is the smoothed empirical bin frequency over the training
+set, $\lambda=0.5$ mixes it with a uniform prior, and $w$ is normalized so that
+$\mathbb{E}[w]=1$. Rare, vivid colors thus receive larger gradients than the
+ubiquitous low-saturation background.
+
+\subsection{Annealed-mean decoding}
+At inference the per-pixel distribution must be collapsed to a single $(a,b)$.
+Taking the mode is faithful but spatially inconsistent; taking the mean
+desaturates. Following~\cite{zhang2016colorful} we use the \emph{annealed mean}
+with temperature $T$:
+\begin{equation}
+  \widehat{ab}_{h,w} = \sum_{q=1}^{Q} f_T\!\left(\widehat{Z}_{h,w}\right)_q\, c_q,
+  \quad
+  f_T(\widehat{Z})_q = \frac{\exp\!\big(\log \widehat{Z}_q / T\big)}
+                            {\sum_{q'} \exp\!\big(\log \widehat{Z}_{q'} / T\big)},
+  \label{eq:annealed}
+\end{equation}
+where $c_q$ is the center of bin $q$. We use $T=0.38$, which interpolates
+between the over-saturated mode ($T\!\to\!0$) and the washed-out mean
+($T\!=\!1$). The decoded $ab$ map is bilinearly upsampled to full resolution and
+recombined with the input $L$.

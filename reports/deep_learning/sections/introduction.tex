@@ -1,0 +1,44 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Image colorization is the task of recovering a plausible color image from a
+single-channel grayscale input. Working in the CIE~Lab color space, the problem
+reduces to predicting the two chrominance channels $(a,b)$ from the luminance
+channel $L$. The mapping is inherently \emph{ill-posed and multimodal}: a gray
+sky could be blue or overcast white, an apple red or green, and a car almost any
+color. There is rarely a single correct answer, only a distribution of
+\emph{plausible} ones.
+
+Classical approaches sidestep this ambiguity by requiring human input---either
+color scribbles propagated across regions, or a reference image whose palette is
+transferred to the target. These methods are accurate when guided but do not
+scale: every new image needs new hints. Deep learning instead \emph{learns the
+color priors} directly from large image collections, enabling \emph{fully
+automatic} colorization in which the only input is the grayscale image itself.
+
+A central design choice is how to handle multimodality. Regressing $(a,b)$ under
+an $\ell_2$ loss collapses the multiple plausible colors toward their mean,
+producing the characteristic desaturated, sepia-tinted outputs of early
+regression models. Zhang \emph{et al.}~\cite{zhang2016colorful} reframed
+colorization as \emph{classification} over a quantized $ab$ palette, predicting a
+distribution over color bins per pixel; this preserves multimodality and yields
+markedly more vivid results. This insight anchors our study.
+
+This report---covering only the deep-learning method of the wider course
+project---reimplements the Zhang 2016 classification CNN, fine-tunes it on
+COCO~2017~\cite{lin2014coco}, and benchmarks it against three representative
+pretrained systems spanning the subsequent paradigms: an interactive
+CNN~\cite{zhang2017realtime} run in automatic mode, the NoGAN
+DeOldify~\cite{antic2019deoldify}, and a diffusion pipeline built on
+ControlNet~\cite{zhang2023controlnet}. Our contributions are:
+
+\begin{itemize}
+  \item a from-scratch, fully-documented reimplementation of the Zhang~2016
+        architecture, loss, and annealed-mean decoder, fine-tuned on COCO~2017;
+  \item a leakage-controlled evaluation protocol on a stratified 1{,}000-image
+        subset of the held-out \texttt{test2017} split, with all metrics
+        reported as \texttt{mean [95\% CI]} via a 10{,}000-resample bootstrap;
+  \item a four-paradigm comparison under identical conditions, with an honest
+        account of where a paradigm could not be reproduced (diffusion) and
+        where a reported number is misleading (the pretrained head mismatch).
+\end{itemize}
