@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-26 — Phases 0-3 complete. T3.2 re-eval against the full-data resumed checkpoint (epoch 8, `last_model.pth`) lifted PSNR 22.97 → 23.29 dB. T3.5 ControlNet remains documented as a reproducibility gap (SD 2.1 deprecated upstream).
+> **Last updated:** 2026-05-27 — Phase 4 complete. Cross-model comparison built via `compare_methods.py --from-metrics` (aggregates the canonical 1,000-image per-model metrics rather than re-running a 50-image subset), plus the three result figures. Phases 0-4 done; Phase 5 (LaTeX report) is next.
 
 ---
 
@@ -105,16 +105,28 @@
 
 ## Phase 4: Comparison & Visualization
 
-- [ ] **T4.1** Run 5-model comparison
-  - `python tools/compare_methods.py --max-images 50`
-  - Output: comparison_summary.json, comparison_metrics.csv, visual grids
-  - _Blocked by: T3.1-T3.5_
+- [x] **T4.1** Build 5-model comparison from canonical metrics
+  - `python tools/compare_methods.py --from-metrics`
+  - **Methodology change from plan**: the plan's literal `--max-images 50` re-run
+    would have produced a *second, weaker* set of numbers (50-img subset, default
+    `best_model.pth` ep6 not the canonical `last_model.pth` ep8, and the ~6 dB
+    ControlNet substitute poisoning the table). Instead `--from-metrics` aggregates
+    the existing per-model `evaluate_deep.py` outputs (full 1,000-image benchmark),
+    keeping the single source of truth — see `docs/benchmark_methodology.md`.
+  - Output: `comparison/comparison_summary.json` (4 models + ControlNet as a
+    documented `status:"gap"` entry = all 5 slots), `comparison/comparison_metrics.csv`
+    (4,000 per-image rows, `model` column). Numbers match the T3 table exactly.
 
-- [ ] **T4.2** Generate result figures
-  - metrics_bar_chart.png, qualitative_grid.png, training_curves.png
-  - _Blocked by: T4.1_
+- [x] **T4.2** Generate result figures (`results/deep_learning/figures/`)
+  - `metrics_bar_chart.png` — PSNR/SSIM/LPIPS with 95% bootstrap CI error bars.
+  - `training_curves.png` — train/val loss + val PSNR over 8 epochs; the two
+    val-loss outliers (ep 2, 7) are masked off the line and annotated.
+  - `qualitative_grid.png` — `--qualitative-grid 5`; Input | Zhang16 (Ours) |
+    Zhang 2017 | DeOldify | GT over 5 benchmark images. Visual only (no metrics
+    enter the report); ControlNet substitute excluded. Run in conda env `AI`.
 
-**CHECKPOINT 4** — [ ] All results and figures ready
+**CHECKPOINT 4** — [x] All results and figures ready. Comparison artifacts + 3 figures
+generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 
 ---
 
