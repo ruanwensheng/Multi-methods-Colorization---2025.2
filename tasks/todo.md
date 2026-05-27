@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-27 — Phase 4 complete. Cross-model comparison built via `compare_methods.py --from-metrics` (aggregates the canonical 1,000-image per-model metrics rather than re-running a 50-image subset), plus the three result figures. Phases 0-4 done; Phase 5 (LaTeX report) is next.
+> **Last updated:** 2026-05-27 — Phases 4 & 5 authored. Phase 4: cross-model comparison via `compare_methods.py --from-metrics` + 3 figures. Phase 5: full IEEEtran report under `reports/deep_learning/` (T5.1-T5.5), verified by `tests/test_report.py`; T5.6 PDF compile handed off (no LaTeX engine locally). Next: Phase 6 verification — and T5.6 once the user compiles.
 
 ---
 
@@ -132,31 +132,30 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 
 ## Phase 5: LaTeX Report
 
-- [ ] **T5.1** Create report directory structure + main.tex + references.bib
-  - `reports/deep_learning/` with IEEEtran format, 8 BibTeX entries
-  - _No blockers — can start anytime_
+- [x] **T5.1** Create report directory structure + main.tex + references.bib
+  - `reports/deep_learning/` (IEEEtran conference class), references.bib with all 8 entries.
+  - Figures: `architecture.png` + `ab_quantization.png` generated from the actual model/quantizer
+    (confirmed Q=233 in-gamut bins); `training_curves/metrics_comparison/qualitative_grid` copied from results.
+  - Verified by `tests/test_report.py` (structural guards + a cite/figure lint standing in for the compiler).
 
-- [ ] **T5.2** Write introduction.tex + related_work.tex
-  - Problem statement, 4-paradigm taxonomy, all citations
-  - _No blockers — can start anytime_
+- [x] **T5.2** Write introduction.tex + related_work.tex
+  - Problem statement (ill-posed/multimodal, classification vs regression), 4-paradigm taxonomy table, all citations.
 
-- [ ] **T5.3** Write method.tex
-  - Zhang16 architecture, loss equations (Eq. 2-4), quantization, training
-  - _No blockers — can start anytime_
+- [x] **T5.3** Write method.tex
+  - Zhang16 architecture (Fig.), class-rebalanced CE loss + rebalancing weight + annealed-mean decode (T=0.38), Q=233 quantization, training.
 
-- [ ] **T5.4** Write experiments.tex + results.tex
-  - COCO 2017, 5 models, hyperparameters, metrics table, qualitative grids
-  - _Blocked by: Phase 4 (needs actual numbers and figures)_
+- [x] **T5.4** Write experiments.tex + results.tex
+  - COCO 2017, leakage-safe 1,000-img test2017 benchmark, hyperparameter table, metrics table with 95% CIs, bar chart + qualitative grid. Numbers match Phase-3/4 exactly.
 
-- [ ] **T5.5** Write discussion.tex + conclusion.tex
-  - Trade-off analysis, recommendations
-  - _Blocked by: T5.4_
+- [x] **T5.5** Write discussion.tex + conclusion.tex
+  - Speed/quality trade-offs, saturation/failure analysis, diffusion-gap-as-finding, per-paradigm recommendations.
 
-- [ ] **T5.6** Compile final PDF
-  - `pdflatex main && bibtex main && pdflatex main && pdflatex main`
-  - _Blocked by: T5.5_
+- [~] **T5.6** Compile final PDF — **handed off to user (no LaTeX engine in this env)**
+  - `pdflatex` / `bibtex` / `tectonic` / `latexmk` are all absent locally; user opted to compile on their own toolchain.
+  - Compile: `cd reports/deep_learning && pdflatex main && bibtex main && pdflatex main && pdflatex main`
+    (or upload the folder to Overleaf). Structural integrity already validated by `tests/test_report.py`.
 
-**CHECKPOINT 5** — [ ] Report compiles to clean PDF
+**CHECKPOINT 5** — [~] Report authored & structurally verified; final PDF compile pending the user's LaTeX toolchain.
 
 ---
 
