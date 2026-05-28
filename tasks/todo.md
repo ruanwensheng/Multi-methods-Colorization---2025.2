@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-27 — Phases 4 & 5 authored. Phase 4: cross-model comparison via `compare_methods.py --from-metrics` + 3 figures. Phase 5: full IEEEtran report under `reports/deep_learning/` (T5.1-T5.5), verified by `tests/test_report.py`; T5.6 PDF compile handed off (no LaTeX engine locally). Next: Phase 6 verification — and T5.6 once the user compiles.
+> **Last updated:** 2026-05-28 — Phase 4 & 5 hardened for presentation. Added Zhang16 Pretrained as a column in `qualitative_grid.png` (visualises the 313→233 head-mismatch). Added a per-image analysis pipeline (`analyze_per_image`): writes `comparison/win_rates.json` + `per_image_winners.csv`, and renders `model_strengths.png` (each row = the benchmark image where that model's PSNR margin over the runner-up is largest). `results.tex` now carries a "Per-image analysis: where each model wins" subsection with the win-rate table. Headline: DeOldify dominates LPIPS (85.9%); our fine-tuned model wins SSIM on 64.5% of images by being structure-faithful. T5.6 PDF compile still handed off.
 
 ---
 
