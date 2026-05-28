@@ -217,6 +217,82 @@ def test_make_bar_chart_writes_png(tmp_path):
     assert os.path.exists(path) and os.path.getsize(path) > 0
 
 
+# ---------------------------------------------------------------------------
+# Per-image analysis (the "which model is best for which kind of picture" story)
+# ---------------------------------------------------------------------------
+
+def _row(image, model, psnr, ssim, lpips):
+    return {"image": image, "model": model, "psnr": str(psnr),
+            "ssim": str(ssim), "lpips": str(lpips), "elapsed_sec": "0.1"}
+
+
+def test_analyze_counts_per_metric_winners():
+    """Per-metric win counts respect direction (PSNR/SSIM up, LPIPS down)."""
+    cm = _load_compare_methods_module()
+    rows = [
+        # img1: A wins psnr+ssim, C wins lpips (lowest)
+        _row("img1.jpg", "A", 25, 0.90, 0.20),
+        _row("img1.jpg", "B", 20, 0.85, 0.30),
+        _row("img1.jpg", "C", 18, 0.80, 0.10),
+        # img2: B wins psnr+ssim, A wins lpips
+        _row("img2.jpg", "A", 15, 0.70, 0.15),
+        _row("img2.jpg", "B", 22, 0.90, 0.25),
+        _row("img2.jpg", "C", 19, 0.82, 0.20),
+    ]
+    out = cm.analyze_per_image(rows)
+    assert out["n_images"] == 2
+    assert out["win_counts"]["psnr"] == {"A": 1, "B": 1, "C": 0}
+    assert out["win_counts"]["ssim"] == {"A": 1, "B": 1, "C": 0}
+    assert out["win_counts"]["lpips"] == {"A": 1, "B": 0, "C": 1}
+
+
+def test_analyze_strengths_pick_largest_psnr_margin_first():
+    """`strengths[model][0]` must be the image where `model`'s PSNR margin over
+    the runner-up is largest --- the row's headline 'this is the picture this
+    model is uniquely good at'."""
+    cm = _load_compare_methods_module()
+    rows = [
+        # img1: A wins by 5 dB over B
+        _row("img1.jpg", "A", 25, 0.9, 0.2),
+        _row("img1.jpg", "B", 20, 0.85, 0.25),
+        # img2: A wins by 1 dB over B
+        _row("img2.jpg", "A", 22, 0.9, 0.2),
+        _row("img2.jpg", "B", 21, 0.85, 0.25),
+    ]
+    out = cm.analyze_per_image(rows)
+    top = out["strengths"]["A"][0]
+    assert top["image"] == "img1.jpg"
+    assert abs(top["margin"] - 5.0) < 1e-9
+    assert top["second_best_model"] == "B"
+
+
+def test_analyze_win_rates_sum_to_one_per_metric():
+    cm = _load_compare_methods_module()
+    rows = [
+        _row("img1.jpg", "A", 25, 0.9, 0.2),
+        _row("img1.jpg", "B", 20, 0.85, 0.25),
+        _row("img2.jpg", "A", 21, 0.85, 0.3),
+        _row("img2.jpg", "B", 22, 0.90, 0.2),
+    ]
+    out = cm.analyze_per_image(rows)
+    for metric in ("psnr", "ssim", "lpips"):
+        total = sum(out["win_rate"][metric].values())
+        assert abs(total - 1.0) < 1e-9, f"{metric} win_rate sums to {total}"
+
+
+def test_analyze_skips_non_numeric_metric_cells():
+    """Empty / non-numeric metric strings (e.g., missing LPIPS) must not crash."""
+    cm = _load_compare_methods_module()
+    rows = [
+        _row("img1.jpg", "A", 25, 0.9, ""),    # missing lpips
+        _row("img1.jpg", "B", 20, 0.85, 0.3),
+    ]
+    out = cm.analyze_per_image(rows)
+    assert out["win_counts"]["psnr"]["A"] == 1
+    # lpips: only B has a numeric value -> no comparison possible -> no winner
+    assert out["win_counts"]["lpips"] == {"A": 0, "B": 0}
+
+
 def test_make_training_curves_writes_png(tmp_path):
     """Training-curve figure renders from a training_log.json."""
     cm = _load_compare_methods_module()

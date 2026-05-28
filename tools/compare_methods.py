@@ -157,6 +157,79 @@ def aggregate_from_metrics(metrics_root):
     return summary, rows
 
 
+def analyze_per_image(rows, top_k_strengths=5):
+    """Per-image winners + per-model strengths from the row-level comparison data.
+
+    Answers the question we care about for the report: ``which model is best at
+    which kind of picture, and how much better?'' For every benchmark image we
+    rank the models by each metric (higher is better for PSNR/SSIM, lower for
+    LPIPS) and tally the wins; for each model we then list the top-K images
+    where its PSNR margin over the runner-up is largest --- these are the
+    ``this is where this model shines'' exemplars used by the strengths figure.
+
+    Non-numeric metric cells (empty strings, ``None``) are simply skipped; an
+    image with fewer than two models scoring a given metric contributes no
+    winner for that metric.
+    """
+    # group by image, in arrival order (model order discovered as we go)
+    by_image, models_seen = {}, []
+    for r in rows:
+        img = r.get("image", ""); model = r.get("model", "")
+        if not img or not model:
+            continue
+        if model not in models_seen:
+            models_seen.append(model)
+        by_image.setdefault(img, {})[model] = r
+
+    metric_dirs = {"psnr": True, "ssim": True, "lpips": False}  # True = higher better
+    win_counts = {m: {model: 0 for model in models_seen} for m in metric_dirs}
+    n_counted = {m: 0 for m in metric_dirs}
+    winners_per_image, psnr_margins = [], []
+
+    for img, modeldata in by_image.items():
+        row_winners = {"image": img}
+        for metric, higher_better in metric_dirs.items():
+            scored = []
+            for model, r in modeldata.items():
+                try:
+                    scored.append((model, float(r.get(metric, ""))))
+                except (ValueError, TypeError):
+                    continue
+            if len(scored) < 2:
+                continue
+            scored.sort(key=lambda mv: mv[1], reverse=higher_better)
+            winner, w_val = scored[0]
+            runner, r_val = scored[1]
+            win_counts[metric][winner] += 1
+            n_counted[metric] += 1
+            row_winners[f"{metric}_winner"] = winner
+            if metric == "psnr":
+                psnr_margins.append({
+                    "image": img, "winner": winner, "winner_value": w_val,
+                    "second_best_model": runner, "second_best_value": r_val,
+                    "margin": w_val - r_val,
+                })
+        winners_per_image.append(row_winners)
+
+    win_rate = {m: {model: (win_counts[m][model] / n_counted[m] if n_counted[m] else 0.0)
+                    for model in models_seen} for m in metric_dirs}
+
+    strengths = {}
+    for model in models_seen:
+        wins = [x for x in psnr_margins if x["winner"] == model]
+        wins.sort(key=lambda x: -x["margin"])
+        strengths[model] = wins[:top_k_strengths]
+
+    return {
+        "n_images": len(by_image),
+        "models": list(models_seen),
+        "win_counts": win_counts,
+        "win_rate": win_rate,
+        "strengths": strengths,
+        "winners_per_image": winners_per_image,
+    }
+
+
 def write_comparison_artifacts(summary, rows, output_dir):
     """Write comparison_summary.json + comparison_metrics.csv. Returns their paths."""
     os.makedirs(output_dir, exist_ok=True)
@@ -259,6 +332,39 @@ def make_training_curves(training_log_path, save_path, loss_ymax=5.0):
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def load_evaluated_models(cfg, ft_path, pretrained_path=None, device="auto"):
+    """Load the four evaluated models (ControlNet excluded) for a qualitative grid.
+
+    Differs from ``load_all_models`` in that it instantiates Zhang16 *twice*
+    with explicit labels --- the pretrained ECCV-init model and our fine-tuned
+    checkpoint --- so the figure can show, in one frame, what fine-tuning bought
+    visually. Third-party comparisons (Zhang17, DeOldify) are added through
+    ``get_comparison_models``; the Diffusion slot is dropped (see T3.5).
+    Returned dict order = column order in the grid.
+    """
+    models = {}
+    if pretrained_path and os.path.exists(pretrained_path):
+        try:
+            models["Zhang16 Pretrained"] = DeepColorizer(
+                model_path=pretrained_path, cfg=cfg, device=device)
+            print(f"  Loaded: Zhang16 Pretrained from {pretrained_path}")
+        except Exception as e:
+            print(f"  Zhang16 Pretrained load failed: {e}")
+    if ft_path and os.path.exists(ft_path):
+        try:
+            models["Zhang16 Fine-tuned (Ours)"] = DeepColorizer(
+                model_path=ft_path, cfg=cfg, device=device)
+            print(f"  Loaded: Zhang16 Fine-tuned (Ours) from {ft_path}")
+        except Exception as e:
+            print(f"  Zhang16 Fine-tuned load failed: {e}")
+    for name, m in get_comparison_models(cfg).items():
+        if "controlnet" in name.lower() or "diffusion" in name.lower():
+            continue  # documented reproducibility gap; would poison the figure
+        models[name] = m
+        print(f"  Loaded: {name}")
+    return models
 
 
 def load_all_models(cfg, model_path=None, device="auto"):
@@ -396,6 +502,59 @@ def make_qualitative_grid(models, test_dir, image_names, save_path):
     return [p[0] for p in per_image], model_names
 
 
+def make_strengths_figure(models, test_dir, strengths, save_path):
+    """One row per evaluated model: the benchmark image where its PSNR margin
+    over the runner-up is largest, with every model's prediction side by side.
+
+    The figure answers the question audiences keep asking: ``which model is
+    best at which kind of picture?'' Rows show the headline (winning model,
+    margin in dB, runner-up); columns are the same as in the qualitative grid.
+    Models that never win get no row, so the figure scales gracefully.
+    """
+    picks = []  # (winner_name, strength_info)
+    for name in models:
+        s_list = strengths.get(name, [])
+        if s_list:
+            picks.append((name, s_list[0]))
+    if not picks:
+        return None
+
+    col_titles = ["Input"] + list(models.keys()) + ["Ground Truth"]
+    n_rows, n_cols = len(picks), len(col_titles)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(2.7 * n_cols, 2.9 * n_rows))
+    axes = np.atleast_2d(axes)
+
+    for r, (winner_name, info) in enumerate(picks):
+        img_bgr = cv2.imread(os.path.join(test_dir, info["image"]))
+        if img_bgr is None:
+            continue
+        results, gray, gt_rgb = compare_on_image(models, img_bgr)
+        preds = {n: pred for n, (pred, _m, _t) in results.items()}
+        axes[r][0].imshow(gray, cmap="gray")
+        for c, m in enumerate(models, start=1):
+            if m in preds:
+                axes[r][c].imshow(preds[m])
+            else:
+                axes[r][c].text(0.5, 0.5, "n/a", ha="center", va="center", fontsize=8)
+        axes[r][-1].imshow(gt_rgb)
+        for c in range(n_cols):
+            axes[r][c].set_xticks([]); axes[r][c].set_yticks([])
+            if r == 0:
+                axes[r][c].set_title(col_titles[c], fontsize=9)
+        axes[r][0].set_ylabel(
+            f"{winner_name}\nwins by\n{info['margin']:+.2f} dB\n(vs {info['second_best_model']})",
+            fontsize=8, rotation=0, ha="right", va="center", labelpad=90,
+        )
+
+    fig.suptitle("Per-model strengths: for each model, the benchmark image where its "
+                 "PSNR margin over the runner-up is largest", fontsize=11)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return [(p[0], p[1]["image"], p[1]["margin"]) for p in picks]
+
+
 def _run_from_metrics(cfg, args):
     """T4.1 + T4.2: assemble the comparison and figures from canonical per-model
     metrics (no model re-run). Optionally renders the qualitative grid, which is
@@ -403,6 +562,7 @@ def _run_from_metrics(cfg, args):
     metrics_dir = args.metrics_dir or os.path.join(cfg["paths"]["results_deep"], "metrics")
     output_dir = args.output_dir or os.path.join(cfg["paths"]["results_deep"], "comparison")
     figures_dir = args.figures_dir or os.path.join(cfg["paths"]["results_deep"], "figures")
+    test_dir = args.test_dir or os.path.join(cfg["paths"]["data_coco"], "benchmark")
 
     print(f"Aggregating canonical per-model metrics from: {metrics_dir}")
     summary, rows = aggregate_from_metrics(metrics_dir)
@@ -425,6 +585,27 @@ def _run_from_metrics(cfg, args):
               f"{e.get('ssim_mean', float('nan')):>10.4f}{e.get('lpips_mean', float('nan')):>10.4f}")
     print('='*70)
 
+    # Per-image analysis ("which model wins which image") — always; cheap, pure.
+    analysis = analyze_per_image(rows)
+    win_path = os.path.join(output_dir, "win_rates.json")
+    with open(win_path, "w") as f:
+        json.dump({"n_images":  analysis["n_images"],
+                   "models":    analysis["models"],
+                   "win_counts": analysis["win_counts"],
+                   "win_rate":   analysis["win_rate"]}, f, indent=2)
+    winners_csv = os.path.join(output_dir, "per_image_winners.csv")
+    with open(winners_csv, "w", newline="") as f:
+        fields = ["image", "psnr_winner", "ssim_winner", "lpips_winner"]
+        w = csv.DictWriter(f, fieldnames=fields); w.writeheader()
+        for r in analysis["winners_per_image"]:
+            w.writerow({k: r.get(k, "") for k in fields})
+    print(f"  wrote {win_path}")
+    print(f"  wrote {winners_csv}")
+    print("  PSNR wins: " + ", ".join(
+        f"{m} {100 * analysis['win_rate']['psnr'][m]:.1f}%" for m in analysis["models"]))
+    print("  LPIPS wins: " + ", ".join(
+        f"{m} {100 * analysis['win_rate']['lpips'][m]:.1f}%" for m in analysis["models"]))
+
     bar_path = os.path.join(figures_dir, "metrics_bar_chart.png")
     make_bar_chart(summary, bar_path)
     print(f"  wrote {bar_path}")
@@ -436,24 +617,36 @@ def _run_from_metrics(cfg, args):
     else:
         print(f"  (skipped training curves — no log at {args.training_log})")
 
-    if args.qualitative_grid > 0:
-        test_dir = args.test_dir or os.path.join(cfg["paths"]["data_coco"], "benchmark")
-        print(f"\nRendering qualitative grid ({args.qualitative_grid} images) — loads models...")
-        models = load_all_models(cfg, args.model_path, args.device)
-        # The grid is a visual, not a metric source: render whatever loaded but
-        # drop the Diffusion gap substitute (it yields ~6 dB; see T3.5). Skip,
-        # don't crash, if a model's deps are missing in this environment.
-        models = {n: m for n, m in models.items()
-                  if "controlnet" not in n.lower() and "diffusion" not in n.lower()}
+    # Model-loading is the only GPU step; do it once if either visual is requested.
+    needs_models = args.qualitative_grid > 0 or args.strengths_figure
+    if needs_models:
+        print("\nLoading models for figure rendering...")
+        models = load_evaluated_models(
+            cfg, ft_path=args.model_path,
+            pretrained_path=args.pretrained_path, device=args.device,
+        )
         if not models:
-            print("  no comparison models available in this env — skipping grid")
+            print("  no comparison models available in this env — skipping figures")
+            models = None
+    else:
+        models = None
+
+    if models and args.qualitative_grid > 0:
+        extensions = {".jpg", ".jpeg", ".png"}
+        names = sorted(f for f in os.listdir(test_dir)
+                       if os.path.splitext(f)[1].lower() in extensions)[:args.qualitative_grid]
+        grid_path = os.path.join(figures_dir, "qualitative_grid.png")
+        used_imgs, used_models = make_qualitative_grid(models, test_dir, names, grid_path)
+        print(f"  wrote {grid_path} ({len(used_imgs)} imgs x {len(used_models)} models: {used_models})")
+
+    if models and args.strengths_figure:
+        strengths_path = os.path.join(figures_dir, "model_strengths.png")
+        used = make_strengths_figure(models, test_dir, analysis["strengths"], strengths_path)
+        if used:
+            print(f"  wrote {strengths_path} — " + "; ".join(
+                f"{m}: {img} (+{margin:.2f} dB)" for m, img, margin in used))
         else:
-            extensions = {".jpg", ".jpeg", ".png"}
-            names = sorted(f for f in os.listdir(test_dir)
-                           if os.path.splitext(f)[1].lower() in extensions)[:args.qualitative_grid]
-            grid_path = os.path.join(figures_dir, "qualitative_grid.png")
-            used_imgs, used_models = make_qualitative_grid(models, test_dir, names, grid_path)
-            print(f"  wrote {grid_path} ({len(used_imgs)} imgs x {len(used_models)} models: {used_models})")
+            print("  no PSNR wins among loaded models — strengths figure skipped")
 
     print(f"\nDone. Comparison in {output_dir}, figures in {figures_dir}")
 
@@ -488,6 +681,14 @@ def main():
     parser.add_argument("--qualitative-grid", type=int, default=0,
                         help="With --from-metrics: re-run models on N benchmark "
                              "images to render qualitative_grid.png (0 = skip).")
+    parser.add_argument("--pretrained-path", default="models/pretrained/zhang16_eccv.pth",
+                        help="Zhang16 ECCV checkpoint shown as the Pretrained column "
+                             "of the qualitative grid (so the audience can see what "
+                             "fine-tuning bought). Set to '' to skip.")
+    parser.add_argument("--strengths-figure", action="store_true",
+                        help="With --from-metrics: render model_strengths.png "
+                             "(one row per model, showing the benchmark image "
+                             "where its PSNR margin over the runner-up is largest).")
     args = parser.parse_args()
 
     cfg = load_config(args.config)

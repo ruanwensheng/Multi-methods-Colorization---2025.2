@@ -47,13 +47,72 @@ Zhang17 in automatic mode exhibits the characteristic color blotches and
 bleeding of a hint-driven model deprived of hints, which explains its low
 scores.
 
-\begin{figure}[t]
+\begin{figure*}[t]
   \centering
-  \includegraphics[width=\columnwidth]{qualitative_grid.png}
-  \caption{Qualitative comparison on \texttt{test2017} images. Columns: input,
-  Zhang16 fine-tuned (ours), Zhang17 (auto), DeOldify, ground truth.}
+  \includegraphics[width=0.95\textwidth]{qualitative_grid.png}
+  \caption{Qualitative comparison on five \texttt{test2017} images. Columns:
+  input, Zhang16 pretrained, Zhang16 fine-tuned (ours), Zhang17 (auto),
+  DeOldify, ground truth. The \emph{pretrained} column visually illustrates the
+  head-mismatch noted in Sec.~\ref{sec:method}---the official 313-bin ECCV head
+  is dropped on load, leaving our 233-bin head untrained, which produces the
+  characteristic grid-pattern color noise. Fine-tuning on COCO eliminates it
+  completely. Zhang17 in automatic mode exhibits a different failure mode
+  (saturated blotches and color bleeding across object boundaries); DeOldify
+  and our fine-tuned model produce coherent, naturally-colored results, with
+  DeOldify the most saturated.}
   \label{fig:grid}
-\end{figure}
+\end{figure*}
+
+\subsection{Per-image analysis: where each model wins}
+The aggregate numbers in Table~\ref{tab:results} hide an important fact:
+\emph{which} model is best varies image by image, and the answer depends on the
+metric. Table~\ref{tab:winrates} tallies, for each metric, the fraction of the
+$1{,}000$ benchmark images on which each model is the winner (columns sum to
+$100\%$). The pattern is nuanced: DeOldify dominates on PSNR and especially on
+LPIPS, yet our fine-tuned model wins SSIM on nearly two-thirds of images by
+being more faithful to structure on conservative, low-saturation content; the
+Pretrained and Zhang17 rows almost never win, confirming what
+Figs.~\ref{fig:grid}--\ref{fig:strengths} show visually.
+
+\begin{table}[t]
+\centering
+\caption{Per-image win rate: \% of $1{,}000$ benchmark images on which the model
+is the winner under that metric (columns sum to $100\%$).}
+\label{tab:winrates}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Model & PSNR\,$\uparrow$ & SSIM\,$\uparrow$ & LPIPS\,$\downarrow$ \\
+\midrule
+Zhang16 Pretrained        & 2.9\%  & 0.7\%  & 0.5\%  \\
+Zhang16 Fine-tuned (ours) & 37.8\% & \textbf{64.5\%} & 13.4\% \\
+Zhang 2017 (auto)         & 1.3\%  & 0.3\%  & 0.2\%  \\
+DeOldify (GAN)            & \textbf{58.0\%} & 34.5\% & \textbf{85.9\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:strengths} drills further: for each model, it shows the
+benchmark image where that model's PSNR margin over the runner-up is largest.
+The ``what each model is good at'' becomes immediately legible. Our fine-tuned
+model's biggest win ($+15.1$\,dB) is on a desaturated, earth-tone outdoor scene
+where its conservative, structure-faithful behavior matches the ground truth
+and DeOldify's adversarial color confidence overshoots. DeOldify's biggest win
+($+14.1$\,dB) is on an airplane against a saturated blue sky---the opposite
+regime, where DeOldify commits to the strong sky color while our model hedges
+toward gray. Zhang17 and the Pretrained head only win on a handful of images,
+with margins under ${\sim}3$\,dB, consistent with the win-rate table.
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.95\textwidth]{model_strengths.png}
+  \caption{Per-model strengths. For each evaluated model, the row is the
+  benchmark image where its PSNR margin over the runner-up is largest, with
+  every model's prediction beside it. The headline trade-off becomes visible:
+  each model has a niche (DeOldify on saturated outdoor scenes; ours on
+  conservative earth-tone scenes), and the aggregate numbers in
+  Table~\ref{tab:results} are averages over these niches.}
+  \label{fig:strengths}
+\end{figure*}
 
 \subsection{Analysis}
 \textbf{Fine-tuning is decisive.} Our COCO-fine-tuned model attains
