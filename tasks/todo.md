@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-28 — Phase 4 & 5 hardened for presentation. Added Zhang16 Pretrained as a column in `qualitative_grid.png` (visualises the 313→233 head-mismatch). Added a per-image analysis pipeline (`analyze_per_image`): writes `comparison/win_rates.json` + `per_image_winners.csv`, and renders `model_strengths.png` (each row = the benchmark image where that model's PSNR margin over the runner-up is largest). `results.tex` now carries a "Per-image analysis: where each model wins" subsection with the win-rate table. Headline: DeOldify dominates LPIPS (85.9%); our fine-tuned model wins SSIM on 64.5% of images by being structure-faithful. T5.6 PDF compile still handed off.
+> **Last updated:** 2026-05-29 — **All six phases complete; CHECKPOINT 6 reached.** Phase 6: notebook 03 patched (skip-if-trained guard + small fixes) and verified end-to-end via `nbconvert`; notebook 04 verified end-to-end against canonical Phase-4 artifacts; SPEC §12 audit walked (16/17 ✅, 1 documented ⚠️ — ControlNet diffusion reproducibility gap). `reports/deep_learning/Report.pdf` committed. Branch ready to merge.
 
 ---
 
@@ -161,17 +161,44 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 
 ## Phase 6: Final Verification
 
-- [ ] **T6.1** Verify notebook 03 runs end-to-end
-  - _Blocked by: Phase 4_
+- [x] **T6.1** Verify notebook 03 runs end-to-end
+  - Patched cell 14 with a *skip-if-`best_model.pth`-exists* guard so the demo notebook is
+    re-runnable without re-doing 50 epochs (it now defers to `tools/train_deep.py` for
+    real training). Fixed a typo (`total_mem` → `total_memory`) in cell 1 and the stale
+    "scribble/example-based" mention in cell 21 (Summary).
+  - `tests/test_notebook_03.py` (new, 7 structural + 1 execution-gated): pipeline-stage
+    coverage, config-from-YAML, locked-in skip guard, and full-notebook execution via
+    `nbconvert` (gated on AI env). End-to-end execution: **PASS** (~50s).
 
-- [ ] **T6.2** Verify notebook 04 runs end-to-end
-  - _Blocked by: Phase 4_
+- [x] **T6.2** Verify notebook 04 runs end-to-end
+  - Added `test_notebook_04_executes_end_to_end` (gated on `nbconvert`). The notebook
+    loads `comparison_summary.json` + `comparison_metrics.csv` (`model` column),
+    renders the per-model table + bar charts, and shows `qualitative_grid.png` — all
+    against the canonical Phase-4 artifacts. End-to-end execution: **PASS** (~10s).
 
-- [ ] **T6.3** Final acceptance criteria audit (SPEC section 12)
-  - Walk through all 17 checklist items
-  - _Blocked by: T6.1, T6.2, T5.6_
+- [x] **T6.3** Final acceptance criteria audit (SPEC §12, 17 items)
 
-**CHECKPOINT 6** — [ ] Branch ready to merge into `main`
+| # | Item | Status |
+|---|------|--------|
+| 1 | Data: train+val+test+1k stratified test2017 benchmark (seed=42) | ✅ (T1.1) |
+| 2 | Pretrained weights: Zhang16 ECCV downloaded | ✅ (T1.2) |
+| 3 | Fine-tuning: Zhang16 fine-tuned on COCO 2017, best ckpt saved | ✅ (T2.1) |
+| 4 | Eval Zhang16 Pretrained: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.1; misleading row caveat documented) |
+| 5 | Eval Zhang16 Fine-tuned: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.2) |
+| 6 | Eval Zhang17: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.3) |
+| 7 | Eval DeOldify: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.4) |
+| 8 | Eval ControlNet: PSNR/SSIM/LPIPS on benchmark | ⚠️ Documented reproducibility gap (T3.5; SD 2.1 deprecated upstream) |
+| 9 | Comparison: summary table + visual grids for all 5 models | ✅ (T4.1+T4.2; ControlNet present as `status:"gap"` entry) |
+| 10 | MLflow: all training experiments logged | ✅ (training runs `1753768c…`, `4bd4839f…`, `c3d3c19c…`) |
+| 11 | Notebook 03: runs end-to-end | ✅ (T6.1) |
+| 12 | Notebook 04: 5-model comparison with metrics + visualizations | ✅ (T6.2) |
+| 13 | Tests: all unit tests pass (`pytest tests/`) | ✅ 203 passed, 3 skipped |
+| 14 | Report: LaTeX report compiles to PDF | ✅ `reports/deep_learning/Report.pdf` (committed) |
+| 15 | Config: only deep-learning settings | ✅ (T0.2) |
+| 16 | Requirements: no FastAPI/uvicorn | ✅ (T0.2) |
+| 17 | Clean git: no large data/weights tracked | ✅ `data/raw/`, `models/*.pth`, `mlruns/`, `results/` all in `.gitignore` |
+
+**CHECKPOINT 6** — [x] Branch ready to merge into `main`. Item #8 (ControlNet) is a documented gap, not a defect, and is honestly reflected in the report and summary.
 
 ---
 
