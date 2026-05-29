@@ -74,3 +74,23 @@ class TestNotebookContent:
         assert "psnr" in text
         assert "ssim" in text
         assert "lpips" in text
+
+
+# ---------------------------------------------------------------------------
+# End-to-end execution (Phase 6, T6.2). Gated on nbconvert + ipykernel so it
+# only runs in environments equipped to execute notebooks (e.g., conda env
+# AI). In the base env this skips cleanly rather than failing.
+# ---------------------------------------------------------------------------
+def test_notebook_04_executes_end_to_end(tmp_path):
+    """Run every cell of notebook 04 against the canonical Phase-4 artifacts."""
+    nbformat = pytest.importorskip("nbformat")
+    pytest.importorskip("nbconvert")
+    from nbconvert.preprocessors import ExecutePreprocessor
+    with open(NB_PATH, encoding="utf-8") as f:
+        nb = nbformat.read(f, as_version=4)
+    ep = ExecutePreprocessor(timeout=300, kernel_name="python3")
+    ep.preprocess(nb, {"metadata": {"path": os.path.dirname(NB_PATH)}})
+    out = tmp_path / "executed_04.ipynb"
+    with open(out, "w", encoding="utf-8") as f:
+        nbformat.write(nb, f)
+    assert out.exists() and out.stat().st_size > 0
