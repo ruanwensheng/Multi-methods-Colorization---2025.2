@@ -43,6 +43,10 @@ references/*.docx
 # Local secrets (HF token, etc.) — only the template is committed
 .env
 
-# Local runtime / logs / results — never commit
+# Local runtime / logs / results — exclude by default
 logs/
-results/
+results/*
+# ...but keep the canonical deep-learning evaluation outputs (metrics CSV/JSON,
+# comparison tables, figures, qualitative samples) so readers can inspect them
+# without re-running the GPU eval. Model weights stay ignored via the rules above.
+!results/deep_learning/
