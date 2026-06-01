@@ -1,0 +1,49 @@
+{
+  "n_images": 1000,
+  "models": [
+    "Zhang16 Pretrained",
+    "Zhang16 Fine-tuned (Ours)",
+    "Zhang 2017 (Interactive CNN)",
+    "DeOldify (GAN)"
+  ],
+  "win_counts": {
+    "psnr": {
+      "Zhang16 Pretrained": 29,
+      "Zhang16 Fine-tuned (Ours)": 378,
+      "Zhang 2017 (Interactive CNN)": 13,
+      "DeOldify (GAN)": 580
+    },
+    "ssim": {
+      "Zhang16 Pretrained": 7,
+      "Zhang16 Fine-tuned (Ours)": 645,
+      "Zhang 2017 (Interactive CNN)": 3,
+      "DeOldify (GAN)": 345
+    },
+    "lpips": {
+      "Zhang16 Pretrained": 5,
+      "Zhang16 Fine-tuned (Ours)": 134,
+      "Zhang 2017 (Interactive CNN)": 2,
+      "DeOldify (GAN)": 859
+    }
+  },
+  "win_rate": {
+    "psnr": {
+      "Zhang16 Pretrained": 0.029,
+      "Zhang16 Fine-tuned (Ours)": 0.378,
+      "Zhang 2017 (Interactive CNN)": 0.013,
+      "DeOldify (GAN)": 0.58
+    },
+    "ssim": {
+      "Zhang16 Pretrained": 0.007,
+      "Zhang16 Fine-tuned (Ours)": 0.645,
+      "Zhang 2017 (Interactive CNN)": 0.003,
+      "DeOldify (GAN)": 0.345
+    },
+    "lpips": {
+      "Zhang16 Pretrained": 0.005,
+      "Zhang16 Fine-tuned (Ours)": 0.134,
+      "Zhang 2017 (Interactive CNN)": 0.002,
+      "DeOldify (GAN)": 0.859
+    }
+  }
+}
