@@ -1,58 +1,119 @@
 \section{Method}
 \label{sec:method}
 
-We reimplement the Zhang~2016 classification CNN~\cite{zhang2016colorful}. This
-section describes the color representation, network, quantized objective, and
-decoder; training details follow in Section~\ref{sec:experiments}.
-
-\subsection{Color representation}
-We operate entirely in CIE~Lab. The luminance channel $L\in[0,100]$ is the
-network input (normalized to $[-1,1]$); the chrominance channels
-$(a,b)\in[-110,110]$ are the prediction target. Lab linearly separates lightness
-from color, so the model never has to reproduce structure already present in the
-input---it predicts only chrominance, which is then recombined with the original
-$L$ and converted back to RGB for display and metrics.
-
-\subsection{Network architecture}
-The network (Fig.~\ref{fig:arch}) is a fully-convolutional encoder of eight
-blocks (\texttt{conv1}--\texttt{conv8}), 31.6\,M parameters, with no pooling
-layers: spatial resolution is reduced by stride-2 convolutions and context is
-expanded by dilated convolutions. Blocks~1--3 downsample $256\times256$ input to
-$32\times32$ at 64/128/256 channels; blocks~4--7 hold $32\times32$ at 512
-channels, with dilation~2 in blocks~5--6 to enlarge the receptive field without
-further downsampling; block~8 upsamples once via a transposed convolution and
-ends in a $1\times1$ convolution producing $Q$ logits per spatial location.
-Every convolution is followed by ReLU, and each block by BatchNorm.
+To make the four-paradigm comparison meaningful we first walk through the
+architecture of each evaluated model: what is in the network, why each component
+matters, and what it ultimately buys at evaluation time. The CNN paradigm we
+\emph{reimplement} (Zhang~2016) is described in the most detail
+(Sec.~\ref{sec:method:zhang16}); the three pretrained systems
+(Secs.~\ref{sec:method:zhang17}--\ref{sec:method:controlnet}) are described at
+the level needed to interpret their results in Sec.~\ref{sec:results}. A summary
+view of the colorization data flow common to all four (luminance in, $ab$ out,
+recombine into Lab, convert to RGB) is shown in Fig.~\ref{fig:dl-pipeline}.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{architecture.png}
-  \caption{Zhang~2016 colorization network (our reimplementation). A
-  fully-convolutional, dilated encoder maps the luminance channel to a per-pixel
-  distribution over $Q=233$ quantized $ab$ bins; the annealed-mean decoder turns
-  that distribution into continuous chrominance.}
-  \label{fig:arch}
+  \includegraphics[width=\columnwidth]{Deep_Learning_method.png}
+  \caption{Common Lab pipeline shared by all four paradigms. The grayscale input
+  provides the luminance $L$; the deep model predicts the chrominance $(a,b)$;
+  prediction and input are recombined and converted to RGB. Models differ only
+  in how the central $L\!\to\!(a,b)$ mapping is parameterized and trained.}
+  \label{fig:dl-pipeline}
 \end{figure}
 
-\subsection{Quantized $ab$ palette}
-The $ab$ plane is discretized on a $10\times10$ grid and restricted to bins that
-map to valid sRGB colors at some lightness, yielding $Q=233$ in-gamut bins
-(Fig.~\ref{fig:abquant}). (The official Zhang implementation ships $313$ bins
-from a different gamut hull; our independently-computed grid yields $233$, a
-detail that matters in Section~\ref{sec:results}.) Ground-truth chrominance is
-\emph{soft-encoded}: each pixel's $(a,b)$ is assigned to its $5$ nearest bins
-with Gaussian weights ($\sigma=5$), giving a target distribution
-$Z\in[0,1]^{H\times W\times Q}$ rather than a one-hot label.
+\subsection{Common color representation}
+All four models operate in CIE~Lab. The luminance channel $L\in[0,100]$ is the
+network input (normalized to $[-1,1]$); the chrominance channels
+$(a,b)\in[-110,110]$ are the prediction target. Lab linearly separates lightness
+from color, so the model never has to reproduce the structure already present
+in the input---it predicts only chrominance, which is then recombined with the
+original $L$ and converted back to RGB for display and metrics. This Lab
+factorization is what lets every paradigm below use a single-channel input and
+a two-channel output, regardless of whether the network is a classification
+CNN, a U-Net GAN, or a latent diffusion model.
+
+% =====================================================================
+\subsection{Paradigm 1 (reimplemented): Zhang 2016 — classification CNN}
+\label{sec:method:zhang16}
+
+Zhang \emph{et al.}~\cite{zhang2016colorful} were the first to observe that
+treating colorization as $\ell_2$ regression \emph{collapses} multimodal targets
+to their mean, producing the desaturated, sepia-tinted outputs of earlier
+methods. Their fix has three coupled parts---a fully-convolutional dilated
+encoder, a per-pixel classification head over a quantized $ab$ palette, and a
+temperature-controlled \emph{annealed-mean} decoder---which we reimplement
+faithfully.
+
+\subsubsection{Network architecture}
+The network (Fig.~\ref{fig:zhang16-arch}) is a fully-convolutional encoder of
+eight blocks (\texttt{conv1}--\texttt{conv8}), 31.6\,M parameters. Three design
+choices matter:
+
+\paragraph{No pooling, only stride-2 convolutions.}
+Blocks 1--3 downsample $256\!\times\!256$ to $32\!\times\!32$ at $64/128/256$
+channels by stride-2 convolutions instead of max-pool. Strided convolutions are
+learnable, so the network chooses which low-level features to keep at each
+downsampling step rather than pooling them blindly; this preserves chrominance
+cues that pooling tends to wash out.
+
+\paragraph{Dilated convolutions in the middle blocks.}
+Blocks 4--7 hold spatial resolution at $32\!\times\!32$ with $512$ channels and
+introduce dilation $d=2$ in blocks 5--6. Dilations expand the effective
+receptive field exponentially without adding parameters or further
+downsampling. A wide receptive field is what lets the network infer
+\emph{semantically} consistent colors: the model needs to ``see'' enough of a
+region to decide ``this is grass'' versus ``this is foliage,'' and dilation buys
+that context cheaply.
+
+\paragraph{$1\!\times\!1$ classification head and bilinear upsampling.}
+Block 8 upsamples once via a transposed convolution and ends in a
+$1\!\times\!1$ convolution producing $Q$ logits per spatial location at
+$64\!\times\!64$; the predicted $ab$ map is bilinearly upsampled to full
+resolution at the very end. The network therefore reasons about color at a
+coarse, semantic resolution and lets the input $L$ carry the high-frequency
+structure---an efficient division of labor that keeps the model small.
+
+Every convolution is followed by ReLU and each block by BatchNorm; both
+contribute to training stability rather than to the colorization recipe per se.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{zhang16_arch.png}
+  \caption{Zhang 2016 colorization network (our reimplementation,
+  31.6\,M~params). Stride-2 convolutions downsample to $32\!\times\!32$
+  (\emph{encoder}); dilated convolutions widen the receptive field without
+  further downsampling (\emph{context core}); a $1\!\times\!1$ head produces a
+  per-pixel categorical distribution over $Q\!=\!233$ quantized $ab$ bins,
+  decoded by the annealed-mean operator. Schematic adapted from
+  \cite{zhang2016colorful}.}
+  \label{fig:zhang16-arch}
+\end{figure}
+
+\subsubsection{Quantized $ab$ palette}
+The output side is what makes Zhang 2016 distinct. Instead of regressing
+$(a,b)\in\mathbb{R}^2$, the $ab$ plane is discretized on a $10\!\times\!10$
+grid and restricted to bins that map to valid sRGB colors at some lightness,
+yielding $Q\!=\!233$ in-gamut bins (Fig.~\ref{fig:abquant}). (The official Zhang
+implementation ships $313$ bins from a different gamut hull; our
+independently-computed grid yields $233$, a detail that matters in
+Sec.~\ref{sec:results}.) Ground-truth chrominance is \emph{soft-encoded}: each
+pixel's $(a,b)$ is assigned to its $5$ nearest bins with Gaussian weights
+($\sigma=5$), giving a target distribution $Z\in[0,1]^{H\!\times\!W\!\times\!Q}$
+rather than a one-hot label. Soft encoding makes the loss surface smooth and
+lets the network express \emph{uncertainty} over plausible colors instead of
+having to commit to one.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.78\columnwidth]{ab_quantization.png}
   \caption{The $ab$ color space quantized into $233$ in-gamut bins (shown at
-  $L^{*}=70$). The network predicts a categorical distribution over these bins.}
+  $L^{*}=70$). The network predicts a categorical distribution over these bins
+  rather than a continuous $(a,b)$ pair, which is the mechanism that preserves
+  color multimodality.}
   \label{fig:abquant}
 \end{figure}
 
-\subsection{Class-rebalanced classification loss}
+\subsubsection{Class-rebalanced classification loss}
 Let $\widehat{Z}=\mathcal{G}(L)$ be the predicted per-pixel distribution. We
 minimize a multinomial cross-entropy between $\widehat{Z}$ and the soft target
 $Z$, reweighted to counter the strong prior toward desaturated colors:
@@ -72,9 +133,10 @@ $q^{\star}=\arg\max_q Z_{h,w,q}$ through a rebalancing factor
 where $\widetilde{p}$ is the smoothed empirical bin frequency over the training
 set, $\lambda=0.5$ mixes it with a uniform prior, and $w$ is normalized so that
 $\mathbb{E}[w]=1$. Rare, vivid colors thus receive larger gradients than the
-ubiquitous low-saturation background.
+ubiquitous low-saturation background---this is what prevents the network from
+collapsing onto the easy ``everything brown/gray'' solution.
 
-\subsection{Annealed-mean decoding}
+\subsubsection{Annealed-mean decoding}
 At inference the per-pixel distribution must be collapsed to a single $(a,b)$.
 Taking the mode is faithful but spatially inconsistent; taking the mean
 desaturates. Following~\cite{zhang2016colorful} we use the \emph{annealed mean}
@@ -88,5 +150,183 @@ with temperature $T$:
 \end{equation}
 where $c_q$ is the center of bin $q$. We use $T=0.38$, which interpolates
 between the over-saturated mode ($T\!\to\!0$) and the washed-out mean
-($T\!=\!1$). The decoded $ab$ map is bilinearly upsampled to full resolution and
-recombined with the input $L$.
+($T\!=\!1$). The decoded $ab$ map is bilinearly upsampled to full resolution
+and recombined with the input $L$. This single hyperparameter is what trades
+saturation against spatial coherence in the final output.
+
+% =====================================================================
+\subsection{Paradigm 2: Zhang 2017 — interactive CNN (automatic mode)}
+\label{sec:method:zhang17}
+
+The follow-up of Zhang \emph{et al.}~\cite{zhang2017realtime} attacks a
+different problem: \emph{interactive} colorization, in which the user can paint
+sparse color hints onto a grayscale image and see them propagated globally in
+real time. The architecture extends the Zhang~2016 backbone with a second input
+branch and U-shape skip connections (Fig.~\ref{fig:zhang17-arch}); we evaluate
+it in its publicly-released ``automatic mode,'' i.e.\ with all hints set to
+zero, to compare it on identical terms to the other paradigms.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{zhang17_arch.png}
+  \caption{Zhang 2017 interactive CNN. The main path is a U-Net-style encoder--bottleneck--decoder
+  on the luminance channel with symmetric skip connections (purple). A second
+  branch encodes sparse user-supplied $(a,b)$ hints together with a binary mask
+  channel and concatenates them at the bottleneck. In our \emph{automatic-mode}
+  evaluation the hint inputs are all zeros; the network is therefore asked to
+  colorize from luminance alone---the regime it was \emph{not} optimized for.
+  Schematic adapted from \cite{zhang2017realtime}.}
+  \label{fig:zhang17-arch}
+\end{figure}
+
+\paragraph{What each branch contributes.}
+The luminance branch shares Zhang~2016's encoder/dilated bottleneck/decoder
+backbone but replaces the classification head with direct $ab$ regression and
+adds explicit \emph{symmetric skip connections} (a true U-Net) so that
+high-frequency edge structure flows from the encoder straight into the
+decoder. The skip connections are crucial for hint propagation: a single
+clicked color point must reach distant pixels along sharp edges, and skips
+provide that path. The hint branch is a small CNN that turns the
+$(a_{\text{hint}}, b_{\text{hint}}, \text{mask})$ image into a feature map that
+is concatenated with the luminance bottleneck.
+
+\paragraph{Why automatic mode underperforms.}
+With zero hints, the hint branch contributes a tensor of zeros and the network
+is reduced to a U-Net regressor on luminance with no class-rebalanced
+classification objective and no annealed-mean decoder. The same training
+objective that made the model excellent at \emph{following hints} (sharp
+boundaries, faithful propagation) becomes its weakness in autonomous mode: it
+defaults to under-saturated, sometimes blotchy chrominance because there is no
+user signal indicating where to be bold. This explains the result reported in
+Sec.~\ref{sec:results}, and is itself a finding---an interactive network is
+the wrong tool for a hands-off pipeline.
+
+% =====================================================================
+\subsection{Paradigm 3: DeOldify — GAN (NoGAN recipe)}
+\label{sec:method:deoldify}
+
+DeOldify~\cite{antic2019deoldify} is the most widely-deployed practical
+descendant of GAN-based colorization. There is no peer-reviewed paper, but the
+recipe is well-documented and we summarize its three components: a U-Net
+generator with self-attention, a PatchGAN critic, and the \emph{NoGAN}
+training schedule (Fig.~\ref{fig:deoldify-arch}). Our evaluation uses the
+``Artistic'' checkpoint exactly as released; we do not retrain.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{deoldify_arch.png}
+  \caption{DeOldify generator and the NoGAN training schedule. The generator
+  is a U-Net with a ResNet-34 encoder (ImageNet-initialized), self-attention
+  at the bottleneck, and dense skip connections to the decoder. The critic is
+  a spectral-normalized PatchGAN that compares full RGB outputs to real
+  images. NoGAN pre-trains $G$ and $D$ separately, then runs a very short
+  adversarial fine-tune, sidestepping the instability that has historically
+  made colorization GANs hard to train.}
+  \label{fig:deoldify-arch}
+\end{figure}
+
+\paragraph{Why a ResNet-34 encoder.}
+Initializing the encoder from an ImageNet-pretrained ResNet-34 imports strong
+mid-level features (textures, parts, object semantics) for free, which
+dramatically reduces the data and time needed to learn ``what color this
+\emph{thing} usually is.'' Skip connections then feed those semantic features
+back into the decoder.
+
+\paragraph{Why the self-attention bottleneck.}
+A vanilla convolutional bottleneck can only relate spatially nearby features;
+self-attention~\cite{vitoria2020chromagan} (independently and contemporaneously
+adopted by ChromaGAN's spirit) lets a single airplane pixel attend to the
+entire sky and adopt a globally-consistent color. This is the mechanism behind
+DeOldify's confident, coherent saturation on large ambiguous regions, which we
+see clearly in the qualitative results.
+
+\paragraph{The PatchGAN critic and the NoGAN recipe.}
+The critic is a spectral-normalized PatchGAN: instead of one global real/fake
+score it returns a grid of patch-level scores, which encourages local realism
+and avoids mode collapse to a uniformly-confident global color. NoGAN further
+stabilizes training by (i)~pretraining $G$ to convergence with a perceptual
+loss alone, (ii)~pretraining $D$ on $G$'s frozen outputs, then (iii)~running
+adversarial training for only a small fraction of the total epochs. The
+adversarial phase is brief enough that the critic never has time to overwhelm
+the generator---historically the failure mode of colorization GANs. The
+practical consequence is the deeply-saturated, restoration-grade output that
+makes DeOldify the SOTA-class anchor of our comparison.
+
+% =====================================================================
+\subsection{Paradigm 4: ControlNet + Stable Diffusion 2.1 — diffusion}
+\label{sec:method:controlnet}
+
+The diffusion paradigm casts colorization as iterative denoising of a latent
+$z_t$ conditioned on the grayscale input. We follow the most popular
+open-source recipe: a pretrained Stable~Diffusion 2.1 text-to-image
+backbone~\cite{zhang2023controlnet} augmented with a ControlNet adapter that
+injects the grayscale condition. Section~\ref{sec:results} documents the
+reproducibility gap we encountered; here we summarize the architecture that
+the gap forced us to leave unevaluated.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{controlnet_arch.png}
+  \caption{ControlNet conditioning of a pretrained Stable Diffusion 2.1 U-Net.
+  The backbone (top, gray) is \emph{frozen}; ControlNet (bottom, blue) is a
+  \emph{trainable copy} of the SD encoder/middle blocks that ingests the
+  grayscale condition. Its outputs are fed back into the matching decoder
+  blocks of the frozen backbone through \emph{zero-convolution} adapters
+  (initialized to weight $0$ so the backbone behaves identically to the
+  pretrained SD at the start of training). Denoising runs for $20$--$50$
+  DDIM steps. Schematic adapted from \cite{zhang2023controlnet}.}
+  \label{fig:controlnet-arch}
+\end{figure}
+
+\paragraph{Why a latent-diffusion backbone.}
+Stable Diffusion 2.1 runs denoising in a learned latent space (4-channel, $1/8$
+resolution) rather than directly in pixel space, which makes it tractable on
+consumer GPUs. The frozen text-to-image backbone provides an enormous prior
+over natural images learned from billions of caption--image pairs; the goal of
+the colorization stack is to \emph{steer} that prior with the grayscale
+condition rather than relearn it.
+
+\paragraph{Why a trainable copy + zero-convolutions.}
+ControlNet's key insight is that fine-tuning the SD backbone to accept a new
+condition tends to destroy the priors that made SD useful in the first place.
+Instead it freezes the backbone and trains a copy of its encoder and middle
+blocks; the copy's outputs are added back into the original backbone via
+\emph{zero-convolution} layers---$1\!\times\!1$ convolutions with weights
+initialized to $0$. At step zero of training, the zero-convs output zeros and
+the system is provably identical to the unconditioned SD model. Gradients
+flow, the weights move off zero, and the network gradually learns how to
+inject condition information without ever harming the underlying prior. This
+is what makes ControlNet stable to train at all on a single consumer GPU.
+
+\paragraph{Why diffusion is slow.}
+A diffusion pass is not a single forward call but a Markov chain of
+$20$--$50$ denoising steps (with DDIM sampling), so latency is roughly an order
+of magnitude higher than a single U-Net pass. This is the structural reason
+the (unreproduced) diffusion slot would have occupied the slow end of our
+speed--quality frontier (Sec.~\ref{sec:discussion}).
+
+% =====================================================================
+\subsection{Putting it together}
+The four paradigms make different choices on a small number of axes that turn
+out to determine their behavior:
+\begin{itemize}
+  \item \emph{Output parameterization.} Classification over a discrete palette
+        (Zhang16) or continuous regression (Zhang17, DeOldify) or latent
+        denoising (ControlNet). Classification preserves multimodality
+        explicitly; regression collapses it; diffusion preserves it implicitly
+        through stochastic sampling.
+  \item \emph{Training objective.} Class-rebalanced cross-entropy (Zhang16),
+        $\ell_2$/perceptual (Zhang17), perceptual + adversarial (DeOldify),
+        noise-prediction (ControlNet). Each objective biases the model toward
+        a different point on the saturation--realism axis.
+  \item \emph{Inductive priors.} Trained from scratch on COCO (Zhang16, our
+        ours), or initialized from large pretrained backbones
+        (ImageNet ResNet for DeOldify; full Stable~Diffusion for ControlNet).
+        Bigger priors give better perceptual quality at higher latency and
+        memory.
+  \item \emph{Inference cost.} A single forward pass
+        (Zhang16/17, DeOldify) versus $20$--$50$ iterative denoising steps
+        (ControlNet).
+\end{itemize}
+Sections~\ref{sec:experiments} and \ref{sec:results} measure these design
+choices against each other on a single benchmark.

@@ -200,6 +200,29 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 
 **CHECKPOINT 6** — [x] Branch ready to merge into `main`. Item #8 (ControlNet) is a documented gap, not a defect, and is honestly reflected in the report and summary.
 
+- [x] **T6.4** Deepen Methodology section + author presentation script (post-checkpoint addition)
+  - `tools/make_arch_figures.py`: generates four consistent-style schematic
+    architecture figures (`zhang16_arch.png`, `zhang17_arch.png`,
+    `deoldify_arch.png`, `controlnet_arch.png`) into `reports/deep_learning/figures/`,
+    plus a copy of the shared Lab-pipeline overview (`Deep_Learning_method.png`)
+    pulled from `references/`.
+  - `sections/method.tex` rewritten as a per-paradigm deep dive: for each of
+    the four paradigms (Zhang16, Zhang17, DeOldify, ControlNet) it inserts the
+    paradigm's architecture figure, walks block-by-block through what each part
+    does, and explains *why* each design choice matters for the result. The
+    Zhang16 subsection still covers the loss, quantization, and annealed-mean
+    decoder mathematically; the other three are explanatory-only since we did
+    not retrain them.
+  - `sections/related_work.tex` trimmed so it no longer duplicates the
+    architecture detail now in `method.tex`; it remains the historical
+    taxonomy map and continues to cite all 4 paradigms.
+  - `tests/test_report.py`: `REQUIRED_FIGURES` updated to list the new
+    architecture figures + pipeline overview. 11/11 report tests + 8/8
+    notebook-04 tests pass (19 total).
+  - `reports/deep_learning/presentation_script.md`: 22-slide speaker script
+    with full talking points and a Q&A prep section, written for a CV professor
+    audience.
+
 ---
 
 ## Quick Reference: What Can Run In Parallel

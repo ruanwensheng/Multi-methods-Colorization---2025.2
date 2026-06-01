@@ -2,8 +2,11 @@
 \label{sec:related_work}
 
 We organize learning-based colorization into four paradigms that emerged in
-succession, each addressing a limitation of the previous one. Table~\ref{tab:taxonomy}
-summarizes the taxonomy and maps each paradigm to the concrete model we evaluate.
+succession, each addressing a limitation of the previous one. This section
+gives the historical and conceptual map; the architectural details of every
+model we evaluate appear in Sec.~\ref{sec:method}.
+Table~\ref{tab:taxonomy} summarizes the taxonomy and maps each paradigm to the
+concrete model we benchmark.
 
 \subsection{CNN classification (2016)}
 Zhang \emph{et al.}~\cite{zhang2016colorful} treat colorization as per-pixel
@@ -11,30 +14,34 @@ classification over a quantized $ab$ palette rather than regression, explicitly
 modeling color multimodality and rebalancing the loss toward rare, saturated
 colors. The result was a step change in perceptual vividness and the first
 strong fully-automatic colorizer. This is the model we reimplement
-(Section~\ref{sec:method}).
+(Sec.~\ref{sec:method:zhang16}); its design is also the conceptual backbone
+that the next three paradigms either extend or react against.
 
 \subsection{Interactive CNN (2017)}
-The follow-up of Zhang \emph{et al.}~\cite{zhang2017realtime} adds a second input
-branch for sparse user hints (clicked color points), fusing learned priors with
-user intent in real time. The same network can run with \emph{zero} hints, in
-which case it behaves as a purely automatic colorizer---the mode in which we
-benchmark it for a fair comparison.
+The follow-up of Zhang \emph{et al.}~\cite{zhang2017realtime} adds a second
+input branch for sparse user hints (clicked color points) and U-shape skip
+connections, fusing learned priors with user intent in real time. The same
+network can run with \emph{zero} hints, in which case it behaves as a purely
+automatic colorizer---the mode in which we benchmark it
+(Sec.~\ref{sec:method:zhang17}) for a fair comparison.
 
 \subsection{GAN (2020)}
-Adversarial training replaces a hand-designed loss with a learned discriminator
-that rewards realism. ChromaGAN~\cite{vitoria2020chromagan} couples an
-adversarial objective with a semantic class-distribution prior. The most
-widely-deployed practical descendant is DeOldify~\cite{antic2019deoldify}, whose
-\emph{NoGAN} recipe stabilizes training and produces robust, restoration-grade
-colorizations; we use it as a SOTA-class anchor.
+Adversarial training replaces a hand-designed loss with a learned
+discriminator that rewards realism. ChromaGAN~\cite{vitoria2020chromagan}
+couples an adversarial objective with a semantic class-distribution prior; its
+contemporaneous, most widely-deployed practical descendant is
+DeOldify~\cite{antic2019deoldify}, whose \emph{NoGAN} recipe stabilizes
+training and produces robust, restoration-grade colorizations
+(Sec.~\ref{sec:method:deoldify}). We use it as a SOTA-class anchor.
 
 \subsection{Diffusion (2022)}
 Conditional diffusion models cast colorization as iterative denoising.
 Palette~\cite{saharia2022palette} frames it as a general image-to-image
 diffusion task, while ControlNet~\cite{zhang2023controlnet} adds spatial
-conditioning to a pretrained text-to-image backbone. We attempt a ControlNet
-pipeline as the diffusion representative; Section~\ref{sec:results} reports the
-reproducibility obstacle we encountered.
+conditioning to a pretrained text-to-image backbone via a trainable encoder
+copy with zero-convolution adapters (Sec.~\ref{sec:method:controlnet}). We
+attempt a ControlNet pipeline as the diffusion representative;
+Sec.~\ref{sec:results} reports the reproducibility obstacle we encountered.
 
 Evaluation in all four paradigms increasingly relies on learned perceptual
 metrics; we adopt LPIPS~\cite{zhang2018lpips} alongside PSNR and SSIM, and

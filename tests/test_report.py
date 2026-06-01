@@ -27,9 +27,15 @@ REQUIRED_BIB_KEYS = [
     "lin2014coco", "zhang2018lpips",
 ]
 
-# Spec section 8: the 5 figures referenced by the report.
+# Figures referenced by the report. The four "*_arch.png" diagrams were added
+# when the methodology section was expanded to discuss each paradigm's
+# architecture in detail; "Deep_Learning_method.png" is the cross-paradigm
+# pipeline overview reused from the project's reference materials.
 REQUIRED_FIGURES = [
-    "architecture.png", "ab_quantization.png", "training_curves.png",
+    "Deep_Learning_method.png",
+    "zhang16_arch.png", "zhang17_arch.png",
+    "deoldify_arch.png", "controlnet_arch.png",
+    "ab_quantization.png", "training_curves.png",
     "metrics_comparison.png", "qualitative_grid.png",
 ]
 
