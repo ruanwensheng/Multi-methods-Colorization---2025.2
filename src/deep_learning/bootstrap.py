@@ -3,7 +3,7 @@
 Why this exists:
     On Windows, the default HF/Torch caches land in ``%USERPROFILE%\\.cache\\``
     on the C: drive. With a 6 GB GPU + a 200+ GB C: drive that fills with
-    games/apps, the SD 1.5 + ControlNet + DeOldify caches (5-10 GB) exhausted
+    games/apps, the HF + DeOldify caches (5-10 GB) exhausted
     free space, the pagefile couldn't grow, and training crashed with
     WinError 1455 (paging file too small).
 

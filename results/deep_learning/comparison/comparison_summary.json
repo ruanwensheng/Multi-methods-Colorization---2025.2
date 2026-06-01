@@ -78,10 +78,5 @@
     "avg_time_sec": 0.5051327402591705,
     "category": "GAN",
     "status": "ok"
-  },
-  "ControlNet (Diffusion)": {
-    "status": "gap",
-    "category": "Diffusion",
-    "reason": "SD 2.1 deprecated upstream; no reproducible diffusion baseline (see T3.5)."
   }
 }

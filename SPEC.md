@@ -13,7 +13,7 @@
 
 **Why deep learning?** Traditional colorization methods (scribble-based, example-based) require manual input or reference images. Deep learning approaches learn color distributions from large datasets and can colorize automatically — no user interaction required.
 
-**Why compare 4 categories?** The deep learning colorization landscape has evolved through distinct paradigms — from classification CNNs (2016) to interactive systems (2017) to GANs (2019-2020) to diffusion models (2022-2023). Comparing them on the same benchmark reveals each paradigm's strengths, weaknesses, and trade-offs (speed, quality, saturation, hallucination).
+**Why compare 3 categories?** The deep learning colorization landscape has evolved through distinct paradigms — from classification CNNs (2016) to interactive systems (2017) to GANs (2019-2020). Comparing them on the same benchmark reveals each paradigm's strengths, weaknesses, and trade-offs (speed, quality, saturation, hallucination). A fourth paradigm — conditional diffusion (2022-2023) — was originally scoped in but excluded after Stability AI deprecated the Stable Diffusion 2.1 backbone that every available open-source colorization checkpoint relied on; see `reports/deep_learning/sections/experiments.tex` for the full exclusion rationale.
 
 **Course context:** This is one of three methods (scribble / example-based / deep learning) being developed in parallel on separate branches. Cross-method comparison happens after all three branches merge into `main`.
 
@@ -24,12 +24,12 @@
 Deliver a **complete deep learning colorization pipeline** that:
 
 1. Reimplements Zhang et al. 2016 "Colorful Image Colorization" from scratch
-2. Evaluates **5 model variants** across **4 DL categories** on a shared COCO 2017 benchmark
+2. Evaluates **4 model variants** across **3 DL categories** on a shared COCO 2017 benchmark
    (a 1,000-image seed=42 subset of **test2017** — see §6.3 Data Splits)
 3. Produces quantitative metrics (PSNR, SSIM, LPIPS), qualitative visualizations, and a written report
 4. Is fully reproducible via CLI tools and documented workflows
 
-### The 5 Model Variants
+### The 4 Model Variants
 
 | # | Category | Model | Source | Training on This Branch |
 |---|----------|-------|--------|------------------------|
@@ -37,9 +37,10 @@ Deliver a **complete deep learning colorization pipeline** that:
 | 2 | **CNN** | Zhang16 Fine-tuned | Our reimplementation + fine-tuned on COCO 2017 | Fine-tune from pretrained |
 | 3 | **Interactive CNN** | Zhang17 (SIGGRAPH) | Official `colorizers` package, auto mode (zero hints) | Inference only |
 | 4 | **GAN** | DeOldify | Official pretrained (NoGAN / Self-Attention GAN) | Inference only |
-| 5 | **Diffusion** | ControlNet + SD 2.1 | HuggingFace `neurallove/controlnet-sd21-colorization-diffusers` | Inference only |
 
-**Key distinction:** Only Zhang16 (#1 and #2) is our code. Models #3-#5 use third-party pretrained weights — we wrap them with a unified inference API for fair comparison.
+**Key distinction:** Only Zhang16 (#1 and #2) is our code. Models #3-#4 use third-party pretrained weights — we wrap them with a unified inference API for fair comparison.
+
+**Diffusion paradigm excluded.** A fifth slot (ControlNet + SD 2.1) was originally scoped in. Stability AI has since deprecated the entire SD 2.x line upstream, and the open-source colorization-checkpoint ecosystem is anchored to SD 2.1. No tested substitute (SD 1.5 brightness-ControlNet, SD-InstructPix2Pix, Flux) produced a faithful evaluation under the benchmark conditions, so the diffusion paradigm is omitted entirely from the comparison rather than represented by a degraded substitute. The decision is documented in detail in `reports/deep_learning/sections/experiments.tex` (Sec. "Why diffusion is excluded from the comparison").
 
 ---
 
@@ -52,7 +53,6 @@ Each category has a **theory paper** (the idea) and a **practical model** (what 
 | **CNN** | Zhang 2016 — "Colorful Image Colorization" (arXiv:1603.08511) | Our reimplementation (Zhang16Net, ~31.6M params) |
 | **Interactive CNN** | Zhang 2017 — "Real-Time User-Guided Image Colorization" (arXiv:1705.02999) | Official pretrained, automatic mode |
 | **GAN** | ChromaGAN (Vitoria, WACV 2020) | DeOldify (Jason Antic) — industry standard for photo restoration |
-| **Diffusion** | Palette (Saharia 2022, arXiv:2111.05826) | ControlNet (Zhang & Agrawala 2023, arXiv:2302.05543) + SD 2.1 |
 
 Reference PDFs are stored in `references/` (external source material — papers we cite).
 Our own engineering documentation (methodology, ADRs) lives in `docs/`.
@@ -85,7 +85,7 @@ feature/deep branch
 │       ├── test2017/               # 40,670 images — official COCO held-out split
 │       ├── annotations/            # 6 JSON files (Kaggle bundle; not used by colorization)
 │       └── benchmark/              # 1,000 shared eval images (seed=42 subset of test2017)
-├── references/                     # External reference papers (PDFs) — Zhang 2016/2017, ChromaGAN, Palette, ControlNet
+├── references/                     # External reference papers (PDFs) — Zhang 2016/2017, ChromaGAN (Palette + ControlNet kept for historical context of the excluded diffusion paradigm)
 ├── docs/                            # Our own engineering documentation
 │   └── benchmark_methodology.md     # Why/how the test2017 benchmark is built
 ├── models/
@@ -97,7 +97,7 @@ feature/deep branch
 │       └── last_model.pth
 ├── notebooks/
 │   ├── 03_deep_learning_pipeline.ipynb   # Full pipeline walkthrough
-│   └── 04_method_comparison.ipynb        # 4-category DL comparison
+│   └── 04_method_comparison.ipynb        # 3-category DL comparison (4 model variants)
 ├── reports/
 │   └── deep_learning/             # LaTeX report for DL method
 │       ├── main.tex               # Root document
@@ -128,7 +128,7 @@ feature/deep branch
 │       ├── quantize.py            # ABQuantizer (313 ab bins)
 │       ├── train.py               # Trainer class (training loop)
 │       ├── utils.py               # Color conversions, metrics, visualization
-│       ├── pretrained.py          # Zhang17, DeOldify, ControlNet wrappers
+│       ├── pretrained.py          # Zhang17 + DeOldify wrappers
 │       └── pts_in_hull.npy        # Pre-computed ab bin centers
 ├── tests/                         # Unit tests for all modules
 │   ├── conftest.py                # Shared fixtures
@@ -145,7 +145,7 @@ feature/deep branch
 │   ├── download_pretrained.py     # Download official pretrained weights
 │   ├── train_deep.py              # Train/fine-tune Zhang16
 │   ├── evaluate_deep.py           # Evaluate single model
-│   └── compare_methods.py         # Compare all 5 model variants
+│   └── compare_methods.py         # Compare the 4 model variants
 ├── workflows/
 │   └── deep_learning_pipeline.md  # Step-by-step SOP
 ├── requirements.txt               # Python dependencies (DL-focused)
@@ -207,12 +207,12 @@ python tools/evaluate_deep.py --model-path models/deep_learning/best_model.pth -
 - Computes PSNR, SSIM, LPIPS on benchmark
 - Saves per-image CSV and aggregate JSON to `results/deep_learning/metrics/`
 
-### Step 5: Compare All 5 Models
+### Step 5: Compare All 4 Models
 
 ```bash
 python tools/compare_methods.py --max-images 50
 ```
-- Runs all 5 variants on benchmark subset
+- Runs all 4 variants on benchmark subset
 - Generates side-by-side comparison grids
 - Outputs summary metrics table and per-image CSV
 
@@ -243,9 +243,9 @@ mlflow ui
 | Input size | 256x256 | Balance between quality and memory |
 | Validation | COCO 2017 val (5K) | Monitor overfitting |
 
-### 6.2 Evaluation Experiment: 5-Model Comparison
+### 6.2 Evaluation Experiment: 4-Model Comparison
 
-All 5 models evaluated on the **same 1,000-image COCO 2017 benchmark** subset
+All 4 models evaluated on the **same 1,000-image COCO 2017 benchmark** subset
 (seed=42 random sample from `test2017`):
 
 | Model | What We Measure |
@@ -254,7 +254,6 @@ All 5 models evaluated on the **same 1,000-image COCO 2017 benchmark** subset
 | Zhang16 Fine-tuned | Does fine-tuning on COCO improve over pretrained? |
 | Zhang17 (auto) | How does the interactive model compare in automatic mode? |
 | DeOldify | GAN approach — more saturated/artistic? |
-| ControlNet | Diffusion approach — highest quality but slowest? |
 
 **Quantitative metrics:** PSNR, SSIM, LPIPS (per-image and aggregate mean/std)
 **Qualitative outputs:** Side-by-side comparison grids (grayscale → each model → ground truth)
@@ -274,17 +273,17 @@ the `if val_loss < self.best_val_loss` branch). Evaluating that same checkpoint 
 subset would be **validation/test contamination** for the fine-tuned model — its metrics would be
 over-optimistic by construction. `test2017` is COCO's official held-out split and is never seen
 during fine-tuning or checkpoint selection, so the same benchmark gives a clean comparison
-across all 5 model variants.
+across all 4 model variants.
 
-The 4 third-party models (Zhang16 Pretrained, Zhang17, DeOldify, ControlNet) were trained on their
+The 3 third-party models (Zhang16 Pretrained, Zhang17, DeOldify) were trained on their
 own datasets (ImageNet/web crawl/etc.) — switching from `val2017` to `test2017` for the benchmark
 does not change their exposure either way, so the comparison stays consistent.
 
 **Why 1,000 images and not more or fewer:**
-- 500 → tight CIs already, but only 8 h total ControlNet compute. Acceptable but conservative.
-- **1,000 → 2× statistical power, ~16 h ControlNet compute, runnable overnight on RTX 2080 Ti. Chosen.**
+- 500 → tight CIs already, but conservative for power.
+- **1,000 → 2× statistical power, runnable in a few hours on consumer hardware. Chosen.**
 - 2,000+ → diminishing returns on stat power, multi-day GPU runs.
-- 40,670 (full test2017) → ControlNet alone ≈ 28 GPU-days, infeasible for a course project.
+- 40,670 (full test2017) → infeasible for a course project.
 
 **Sampling strategy — stratified by visual difficulty, not pure random:**
 
@@ -344,7 +343,6 @@ results/deep_learning/
 │   ├── zhang16_finetuned_metrics.json
 │   ├── zhang17_metrics.json
 │   ├── deoldify_metrics.json
-│   ├── controlnet_metrics.json
 │   └── per_image_metrics.csv             # All models, all images, all metrics
 ├── comparison/
 │   ├── comparison_summary.json           # Aggregate table
@@ -374,7 +372,7 @@ reports/deep_learning/
 ├── main.tex                # Root document — includes all sections
 ├── sections/
 │   ├── introduction.tex    # Problem statement, why DL for colorization
-│   ├── related_work.tex    # 4 paradigms: CNN → Interactive → GAN → Diffusion
+│   ├── related_work.tex    # 3 benchmarked paradigms (CNN → Interactive → GAN) + diffusion-excluded note
 │   ├── method.tex          # Zhang16 architecture, loss, quantization, training
 │   ├── experiments.tex     # Dataset (COCO 2017), metrics, benchmark, hardware
 │   ├── results.tex         # Quantitative table, qualitative grids, analysis
@@ -395,9 +393,9 @@ reports/deep_learning/
 | Section | Content | Key Elements |
 |---------|---------|-------------|
 | **Introduction** | Colorization problem, motivation for DL approaches | Problem definition, figure showing grayscale→color |
-| **Related Work** | Evolution: CNN (2016) → Interactive (2017) → GAN (2020) → Diffusion (2022) | Citation of all 6 papers, taxonomy table |
+| **Related Work** | Evolution: CNN (2016) → Interactive (2017) → GAN (2020), with a brief note on the excluded diffusion paradigm (2022+) | Citation of all benchmarked-paradigm papers, taxonomy table |
 | **Method** | Zhang16 architecture deep-dive | Network diagram, Eq. for loss (Eq. 2-4), ab quantization, annealed-mean |
-| **Experiments** | Setup: COCO 2017, 5 models, 3 metrics, hardware specs | Table of hyperparameters, benchmark description |
+| **Experiments** | Setup: COCO 2017, 4 models, 3 metrics, hardware specs + diffusion-exclusion rationale | Table of hyperparameters, benchmark description |
 | **Results** | Quantitative: metrics table. Qualitative: visual comparison grids | PSNR/SSIM/LPIPS table, best/worst case figures |
 | **Discussion** | Trade-off analysis across paradigms | Speed comparison, color saturation analysis, failure cases |
 | **Conclusion** | Summary of findings, when to use which approach | Practical recommendations |
@@ -409,8 +407,8 @@ reports/deep_learning/
 @inproceedings{zhang2017realtime,         % Interactive CNN - Zhang 2017
 @inproceedings{vitoria2020chromagan,      % GAN theory - ChromaGAN
 @misc{antic2019deoldify,                  % GAN practical - DeOldify
-@inproceedings{saharia2022palette,        % Diffusion theory - Palette
-@inproceedings{zhang2023controlnet,       % Diffusion practical - ControlNet
+@inproceedings{saharia2022palette,        % Diffusion theory - Palette (cited only in the exclusion rationale)
+@inproceedings{zhang2023controlnet,       % Diffusion practical - ControlNet (cited only in the exclusion rationale)
 @inproceedings{lin2014coco,               % Dataset - COCO
 @inproceedings{zhang2018lpips,            % Metric - LPIPS
 ```
@@ -475,7 +473,7 @@ pytest tests/ -v --timeout=60
 
 ### Always Do
 - Use conda environment `AI`
-- Run all experiments on the shared 500-image COCO 2017 benchmark
+- Run all experiments on the shared 1,000-image COCO 2017 benchmark
 - Log all experiments to MLflow
 - Use the unified `colorize()` API for all model comparisons
 - Keep `config.yaml` as the single source of truth for hyperparameters
@@ -486,8 +484,7 @@ pytest tests/ -v --timeout=60
 ### Ask First Before
 - Changing the Zhang16Net architecture (it should match the paper)
 - Modifying the 313 ab quantization bins
-- Adding new comparison models beyond the 5 defined
-- Running ControlNet (requires ~10GB VRAM, may need RTX 2080 Ti)
+- Adding new comparison models beyond the 4 defined
 - Re-downloading COCO 2017 (18GB+ bandwidth)
 - Creating or overwriting workflow files
 - Committing large files (model weights, dataset) to git
@@ -499,7 +496,7 @@ pytest tests/ -v --timeout=60
 - Delete or overwrite the `references/` reference papers
 - Store API keys or secrets outside `.env`
 - Commit model weights or dataset files to git
-- Use DDColor or other transformer-based models (not in our 4 categories)
+- Use DDColor or other models outside the 3 benchmarked categories
 - Skip MLflow logging for any experiment run
 
 ---
@@ -515,11 +512,10 @@ This branch is ready to merge into `main` when ALL of the following are true:
 - [ ] **Evaluation — Zhang16 Fine-tuned:** PSNR, SSIM, LPIPS computed on benchmark
 - [ ] **Evaluation — Zhang17:** PSNR, SSIM, LPIPS computed on benchmark
 - [ ] **Evaluation — DeOldify:** PSNR, SSIM, LPIPS computed on benchmark
-- [ ] **Evaluation — ControlNet:** PSNR, SSIM, LPIPS computed on benchmark
-- [ ] **Comparison:** Summary table + visual grids for all 5 models
+- [ ] **Comparison:** Summary table + visual grids for all 4 models
 - [ ] **MLflow:** All experiments logged and viewable
 - [ ] **Notebook 03:** Pipeline runs end-to-end
-- [ ] **Notebook 04:** Shows 5-model comparison with metrics and visualizations
+- [ ] **Notebook 04:** Shows 4-model comparison with metrics and visualizations
 - [ ] **Tests:** All unit tests pass (`pytest tests/ -v`)
 - [ ] **Report:** LaTeX report in `reports/deep_learning/` compiles to PDF with all sections, tables, figures, and citations
 - [ ] **Config:** `config.yaml` contains only deep learning settings (no scribble/example)
@@ -533,8 +529,7 @@ This branch is ready to merge into `main` when ALL of the following are true:
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | VRAM overflow (6GB GTX 1660) | Training crashes | AMP enabled, reduce batch_size to 4 or 2 |
-| ControlNet needs >6GB | Cannot run on GTX 1660 | Use RTX 2080 Ti, or run with CPU offloading |
-| DeOldify/ControlNet deps conflict | Import errors | Install in separate conda env if needed, document in workflow |
+| DeOldify deps conflict | Import errors | Install in separate conda env if needed, document in workflow |
 | COCO download fails | Blocked progress | Re-run script (idempotent), use university network |
 | Fine-tuning diverges | Bad results | Start from pretrained, use conservative LR, monitor val loss |
 | Comparison models unavailable | Incomplete comparison | Mark as "N/A" in results, document why |
@@ -556,7 +551,6 @@ This branch is ready to merge into `main` when ALL of the following are true:
 **Comparison models (install as needed):**
 - `colorizers` — for Zhang17 (from richzhang/colorization)
 - `deoldify`, `fastai` — for DeOldify
-- `diffusers`, `transformers`, `accelerate` — for ControlNet
 
 **Not needed on this branch:**
 - ~~fastapi, uvicorn~~ (demo API — postponed)

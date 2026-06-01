@@ -2,15 +2,13 @@
 \label{sec:discussion}
 
 \subsection{Speed versus quality}
-The four evaluated models occupy distinct points on the speed--quality frontier.
+The three evaluated models occupy distinct points on the speed--quality frontier.
 The CNNs (ours, $0.18$\,s; Zhang17, $0.22$\,s; pretrained, $0.17$\,s) are
 single forward passes and run at interactive rates even on a $6$\,GB GPU.
 DeOldify, at $0.51$\,s, buys its perceptual edge with a heavier
-self-attention U-Net and a larger render resolution. The (unreproduced)
-diffusion paradigm would sit far to the slow end---tens of denoising steps per
-image. For automatic colorization under a latency budget, the CNN is the
-rational default; the GAN is worth its cost only when perceptual quality is
-paramount.
+self-attention U-Net and a larger render resolution. For automatic
+colorization under a latency budget, the CNN is the rational default; the GAN
+is worth its cost only when perceptual quality is paramount.
 
 \subsection{Saturation and the desaturation trap}
 The classification-plus-annealed-mean design (Eqs.~\ref{eq:loss}--\ref{eq:annealed})
@@ -37,16 +35,24 @@ any single model.
         automatic colorizer; the wrong tool for a hands-off pipeline.
   \item \textbf{GAN} --- highest perceptual quality and best restoration
         behavior, at $\sim$$3\times$ the latency.
-  \item \textbf{Diffusion} --- promising in the literature, but practically
-        fragile: its open-source colorization ecosystem was anchored to a single
-        backbone (SD~2.1) whose deprecation removed the downstream models. This
-        is itself a finding about reproducibility risk in fast-moving toolchains.
 \end{itemize}
+
+\subsection{The diffusion paradigm: a reproducibility finding}
+The decision to exclude diffusion is itself a finding about the open-source
+deep-learning ecosystem rather than a property of the paradigm. Every
+well-trained colorization checkpoint we surveyed in 2026 was built on Stable
+Diffusion 2.1, and the upstream deprecation of SD~2.x removed the foundation
+out from under that downstream collection in one stroke. The lesson generalises:
+a paradigm whose practical implementations share a single foundation model is
+exposed to that foundation model's lifecycle decisions. A future replication
+should revisit the diffusion slot once a maintained colorization checkpoint
+exists on a still-supported backbone---neither of which we could identify at
+the time of writing.
 
 \subsection{Limitations}
 The ``pretrained'' row is not a faithful ECCV baseline (head mismatch), so we
 avoid drawing fine-tuning-gain conclusions from it. The benchmark is $1{,}000$
 images on a single GPU with no human preference study; perceptual quality is
-proxied by LPIPS rather than measured directly. Finally, the diffusion paradigm
-is represented by an acknowledged gap, so its frontier point is inferred from
-the literature, not measured here.
+proxied by LPIPS rather than measured directly. Finally, the comparison is
+three paradigms only---the diffusion paradigm is an explicit gap, discussed
+above, rather than a measured frontier point.

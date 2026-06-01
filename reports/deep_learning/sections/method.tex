@@ -1,36 +1,37 @@
 \section{Method}
 \label{sec:method}
 
-To make the four-paradigm comparison meaningful we first walk through the
+To make the three-paradigm comparison meaningful we first walk through the
 architecture of each evaluated model: what is in the network, why each component
 matters, and what it ultimately buys at evaluation time. The CNN paradigm we
 \emph{reimplement} (Zhang~2016) is described in the most detail
-(Sec.~\ref{sec:method:zhang16}); the three pretrained systems
-(Secs.~\ref{sec:method:zhang17}--\ref{sec:method:controlnet}) are described at
+(Sec.~\ref{sec:method:zhang16}); the two pretrained systems
+(Secs.~\ref{sec:method:zhang17}--\ref{sec:method:deoldify}) are described at
 the level needed to interpret their results in Sec.~\ref{sec:results}. A summary
-view of the colorization data flow common to all four (luminance in, $ab$ out,
+view of the colorization data flow common to all three (luminance in, $ab$ out,
 recombine into Lab, convert to RGB) is shown in Fig.~\ref{fig:dl-pipeline}.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{Deep_Learning_method.png}
-  \caption{Common Lab pipeline shared by all four paradigms. The grayscale input
-  provides the luminance $L$; the deep model predicts the chrominance $(a,b)$;
-  prediction and input are recombined and converted to RGB. Models differ only
-  in how the central $L\!\to\!(a,b)$ mapping is parameterized and trained.}
+  \caption{Common Lab pipeline shared by all three benchmarked paradigms. The
+  grayscale input provides the luminance $L$; the deep model predicts the
+  chrominance $(a,b)$; prediction and input are recombined and converted to
+  RGB. Models differ only in how the central $L\!\to\!(a,b)$ mapping is
+  parameterized and trained.}
   \label{fig:dl-pipeline}
 \end{figure}
 
 \subsection{Common color representation}
-All four models operate in CIE~Lab. The luminance channel $L\in[0,100]$ is the
-network input (normalized to $[-1,1]$); the chrominance channels
+All three models operate in CIE~Lab. The luminance channel $L\in[0,100]$ is
+the network input (normalized to $[-1,1]$); the chrominance channels
 $(a,b)\in[-110,110]$ are the prediction target. Lab linearly separates lightness
 from color, so the model never has to reproduce the structure already present
 in the input---it predicts only chrominance, which is then recombined with the
 original $L$ and converted back to RGB for display and metrics. This Lab
 factorization is what lets every paradigm below use a single-channel input and
 a two-channel output, regardless of whether the network is a classification
-CNN, a U-Net GAN, or a latent diffusion model.
+CNN or a U-Net GAN.
 
 % =====================================================================
 \subsection{Paradigm 1 (reimplemented): Zhang 2016 — classification CNN}
@@ -253,80 +254,24 @@ practical consequence is the deeply-saturated, restoration-grade output that
 makes DeOldify the SOTA-class anchor of our comparison.
 
 % =====================================================================
-\subsection{Paradigm 4: ControlNet + Stable Diffusion 2.1 — diffusion}
-\label{sec:method:controlnet}
-
-The diffusion paradigm casts colorization as iterative denoising of a latent
-$z_t$ conditioned on the grayscale input. We follow the most popular
-open-source recipe: a pretrained Stable~Diffusion 2.1 text-to-image
-backbone~\cite{zhang2023controlnet} augmented with a ControlNet adapter that
-injects the grayscale condition. Section~\ref{sec:results} documents the
-reproducibility gap we encountered; here we summarize the architecture that
-the gap forced us to leave unevaluated.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\columnwidth]{controlnet_arch.png}
-  \caption{ControlNet conditioning of a pretrained Stable Diffusion 2.1 U-Net.
-  The backbone (top, gray) is \emph{frozen}; ControlNet (bottom, blue) is a
-  \emph{trainable copy} of the SD encoder/middle blocks that ingests the
-  grayscale condition. Its outputs are fed back into the matching decoder
-  blocks of the frozen backbone through \emph{zero-convolution} adapters
-  (initialized to weight $0$ so the backbone behaves identically to the
-  pretrained SD at the start of training). Denoising runs for $20$--$50$
-  DDIM steps. Schematic adapted from \cite{zhang2023controlnet}.}
-  \label{fig:controlnet-arch}
-\end{figure}
-
-\paragraph{Why a latent-diffusion backbone.}
-Stable Diffusion 2.1 runs denoising in a learned latent space (4-channel, $1/8$
-resolution) rather than directly in pixel space, which makes it tractable on
-consumer GPUs. The frozen text-to-image backbone provides an enormous prior
-over natural images learned from billions of caption--image pairs; the goal of
-the colorization stack is to \emph{steer} that prior with the grayscale
-condition rather than relearn it.
-
-\paragraph{Why a trainable copy + zero-convolutions.}
-ControlNet's key insight is that fine-tuning the SD backbone to accept a new
-condition tends to destroy the priors that made SD useful in the first place.
-Instead it freezes the backbone and trains a copy of its encoder and middle
-blocks; the copy's outputs are added back into the original backbone via
-\emph{zero-convolution} layers---$1\!\times\!1$ convolutions with weights
-initialized to $0$. At step zero of training, the zero-convs output zeros and
-the system is provably identical to the unconditioned SD model. Gradients
-flow, the weights move off zero, and the network gradually learns how to
-inject condition information without ever harming the underlying prior. This
-is what makes ControlNet stable to train at all on a single consumer GPU.
-
-\paragraph{Why diffusion is slow.}
-A diffusion pass is not a single forward call but a Markov chain of
-$20$--$50$ denoising steps (with DDIM sampling), so latency is roughly an order
-of magnitude higher than a single U-Net pass. This is the structural reason
-the (unreproduced) diffusion slot would have occupied the slow end of our
-speed--quality frontier (Sec.~\ref{sec:discussion}).
-
-% =====================================================================
 \subsection{Putting it together}
-The four paradigms make different choices on a small number of axes that turn
+The three paradigms make different choices on a small number of axes that turn
 out to determine their behavior:
 \begin{itemize}
   \item \emph{Output parameterization.} Classification over a discrete palette
-        (Zhang16) or continuous regression (Zhang17, DeOldify) or latent
-        denoising (ControlNet). Classification preserves multimodality
-        explicitly; regression collapses it; diffusion preserves it implicitly
-        through stochastic sampling.
+        (Zhang16) or continuous regression (Zhang17, DeOldify). Classification
+        preserves multimodality explicitly; regression collapses it.
   \item \emph{Training objective.} Class-rebalanced cross-entropy (Zhang16),
-        $\ell_2$/perceptual (Zhang17), perceptual + adversarial (DeOldify),
-        noise-prediction (ControlNet). Each objective biases the model toward
-        a different point on the saturation--realism axis.
-  \item \emph{Inductive priors.} Trained from scratch on COCO (Zhang16, our
-        ours), or initialized from large pretrained backbones
-        (ImageNet ResNet for DeOldify; full Stable~Diffusion for ControlNet).
-        Bigger priors give better perceptual quality at higher latency and
-        memory.
-  \item \emph{Inference cost.} A single forward pass
-        (Zhang16/17, DeOldify) versus $20$--$50$ iterative denoising steps
-        (ControlNet).
+        $\ell_2$/perceptual (Zhang17), perceptual + adversarial (DeOldify).
+        Each objective biases the model toward a different point on the
+        saturation--realism axis.
+  \item \emph{Inductive priors.} Trained from scratch on COCO (Zhang16, ours),
+        or initialized from large pretrained backbones (ImageNet ResNet for
+        DeOldify). Bigger priors give better perceptual quality at higher
+        latency and memory.
+  \item \emph{Inference cost.} All three are single forward passes
+        (${\sim}0.2$\,s per image on a 6\,GB GPU), so the speed--quality
+        frontier between them is fairly tight.
 \end{itemize}
 Sections~\ref{sec:experiments} and \ref{sec:results} measure these design
 choices against each other on a single benchmark.

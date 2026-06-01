@@ -35,8 +35,6 @@ from src.deep_learning.stats import bootstrap_ci, format_metric
 _COMPARISON_FACTORIES = {
     "zhang2017": ("src.deep_learning.pretrained", "Zhang2017Colorizer"),
     "deoldify":  ("src.deep_learning.pretrained", "DeOldifyColorizer"),
-    "controlnet": ("src.deep_learning.pretrained", "ControlNetColorizer"),
-    "sd_ip2p":  ("src.deep_learning.pretrained", "InstructPix2PixColorizer"),
 }
 
 
@@ -142,7 +140,7 @@ def main():
     parser.add_argument("--model-path", default=None,
                         help="Path to our Zhang16 checkpoint. Mutually exclusive with --method.")
     parser.add_argument("--method", default=None, choices=list(_COMPARISON_FACTORIES),
-                        help="Use a comparison model (Zhang17/DeOldify/ControlNet) instead "
+                        help="Use a comparison model (Zhang17/DeOldify) instead "
                              "of our Zhang16. Mutually exclusive with --model-path.")
     parser.add_argument("--test-dir", default=None, help="Directory of test images")
     parser.add_argument("--output-dir", default=None, help="Output directory for results")

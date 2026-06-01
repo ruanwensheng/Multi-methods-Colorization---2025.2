@@ -12,14 +12,15 @@ $42$), which neither fine-tuning nor checkpoint selection ever touches. All
 models are scored on this identical benchmark.
 
 \subsection{Models compared}
-Table~\ref{tab:models} lists the five model variants spanning the four
-paradigms. Two are our own CNN (the pretrained encoder and our COCO-fine-tuned
-model); the other three are pretrained third-party systems wrapped behind a
-unified \texttt{colorize(gray)} interface so they receive identical inputs.
+Table~\ref{tab:models} lists the four model variants spanning the three
+paradigms we benchmark. Two are our own CNN (the pretrained encoder and our
+COCO-fine-tuned model); the other two are pretrained third-party systems
+wrapped behind a unified \texttt{colorize(gray)} interface so they receive
+identical inputs.
 
 \begin{table}[t]
 \centering
-\caption{The five model variants evaluated on the shared benchmark.}
+\caption{The four model variants evaluated on the shared benchmark.}
 \label{tab:models}
 \begin{tabular}{@{}llc@{}}
 \toprule
@@ -29,10 +30,43 @@ Zhang16 Pretrained (ECCV)      & CNN             & reimpl. \\
 Zhang16 Fine-tuned (COCO 2017) & CNN             & yes \\
 Zhang17 (automatic mode)       & Interactive CNN & no \\
 DeOldify (NoGAN)               & GAN             & no \\
-ControlNet + Stable Diffusion  & Diffusion       & no \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Why diffusion is excluded from the comparison}
+\label{sec:experiments:no-diffusion}
+Conditional diffusion is the natural fourth paradigm and the literature offers
+several strong recipes---image-to-image diffusion in the spirit of
+Palette~\cite{saharia2022palette}, and conditioning a pretrained text-to-image
+backbone via ControlNet~\cite{zhang2023controlnet} adapters. We attempted the
+ControlNet recipe but could not complete it under conditions that would yield
+a meaningful comparison number, for a single, well-defined reason: every
+well-trained openly-released diffusion colorization checkpoint we could find
+is anchored to \emph{Stable Diffusion 2.1} as its image backbone, and
+Stability~AI has deprecated the entire SD~2.x line upstream. The relevant
+Hugging Face repositories (the \texttt{stabilityai/stable-diffusion-2*}
+namespace) return HTTP~401 even with a valid token, and no public mirror
+provides licensed access.
+
+We surveyed three substitution paths and rejected each:
+\begin{itemize}
+  \item \textbf{An SD~1.5 brightness-ControlNet} (\texttt{ioclab/control\_v1p\_sd15\_\allowbreak brightness}).
+        The conditioning channel is brightness, not chrominance; on our benchmark
+        it produced PSNR ${\approx}6$\,dB---worse than a constant-gray output.
+  \item \textbf{An SD~InstructPix2Pix colorization fine-tune}. The model emitted
+        NaN tensors mid-denoise and required ${\sim}9$\,min per image on
+        consumer hardware---neither a useful number nor a usable pipeline.
+  \item \textbf{A Flux-based pipeline}. At 12\,B parameters it does not fit on
+        the 6\,GB GTX~1660~SUPER we used for the rest of the study, breaking
+        the ``identical conditions'' requirement.
+\end{itemize}
+Substituting any of these into Table~\ref{tab:results} would have placed a
+misleading row next to faithfully-evaluated systems. We therefore restrict the
+comparison to the three paradigms above and treat the diffusion gap as a
+finding in its own right: the open-source diffusion-colorization stack was, in
+2026, single-point-of-failure dependent on a backbone that has now been
+withdrawn. We revisit this in Sec.~\ref{sec:discussion}.
 
 \subsection{Metrics and uncertainty}
 We report three complementary metrics, all computed in RGB against the ground

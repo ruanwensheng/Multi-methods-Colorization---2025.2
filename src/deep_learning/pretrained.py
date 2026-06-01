@@ -4,17 +4,19 @@ Pre-trained comparison model wrappers.
 Provides a unified interface for running inference with pre-trained
 colorization models for benchmarking against our Zhang 2016 reimplementation.
 
-Model categories (4 for comparison):
+Model categories (3 for comparison):
     - CNN: Zhang 2016 (our reimplementation, see colorizer.py)
     - Interactive CNN: Zhang 2017 (automatic mode with zero hints)
     - GAN: DeOldify (Self-Attention GAN / NoGAN)
-    - Diffusion: ControlNet + Stable Diffusion
 
 Theory papers mapped to practical models:
     - CNN: "Colorful Image Colorization" (Zhang, ECCV 2016)
     - Interactive CNN: "Real-Time User-Guided Image Colorization" (Zhang, SIGGRAPH 2017)
     - GAN: ChromaGAN (Vitoria, WACV 2020) -> practical: DeOldify
-    - Diffusion: Palette (Saharia, CVPR 2022) -> practical: ControlNet (Zhang & Agrawala, ICCV 2023)
+
+A fourth Diffusion paradigm was originally scoped in (ControlNet + SD 2.1) but
+excluded after the upstream deprecation of SD 2.1. See
+`reports/deep_learning/sections/experiments.tex` for the rationale.
 
 All wrappers expose the same API:
     colorize(gray_image) -> (result_bgr, info_dict)
@@ -65,7 +67,7 @@ class PretrainedColorizer(ABC):
 
     @property
     def category(self):
-        """Return the model category (CNN, Interactive CNN, GAN, Diffusion)."""
+        """Return the model category (CNN, Interactive CNN, GAN)."""
         return "unknown"
 
     @property
@@ -344,286 +346,6 @@ class DeOldifyColorizer(PretrainedColorizer):
 
 
 # =============================================================================
-# Diffusion: ControlNet + Stable Diffusion
-# =============================================================================
-
-class ControlNetColorizer(PretrainedColorizer):
-    """Diffusion-based colorization using ControlNet + Stable Diffusion.
-
-    Uses ControlNet to condition Stable Diffusion on a grayscale image,
-    producing colorized output through the diffusion denoising process.
-
-    Category: Diffusion
-    Theory reference: Palette (Saharia et al., CVPR 2022)
-    Practical model: ControlNet (Zhang & Agrawala, ICCV 2023)
-    Official repo: https://github.com/lllyasviel/ControlNet
-
-    Requires: diffusers, transformers packages.
-    VRAM: ~6-8 GB with FP16 and memory optimizations.
-    """
-
-    def __init__(self, controlnet_model="ioclab/control_v1p_sd15_brightness",
-                 sd_model="sd-legacy/stable-diffusion-v1-5",
-                 num_inference_steps=30, guidance_scale=7.5, device="auto"):
-        self._pipe = None
-        self._controlnet_model = controlnet_model
-        self._sd_model = sd_model
-        self._num_steps = num_inference_steps
-        self._guidance_scale = guidance_scale
-        self._available = False
-        self._device_str = device
-
-        try:
-            import torch
-            from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
-            self._torch = torch
-            self._Pipeline = StableDiffusionControlNetPipeline
-            self._ControlNetModel = ControlNetModel
-            self._available = True
-        except ImportError:
-            print("ControlNet not available. Install with: pip install diffusers transformers accelerate")
-
-    @property
-    def name(self):
-        return "ControlNet (Diffusion)"
-
-    @property
-    def category(self):
-        return "Diffusion"
-
-    @property
-    def is_available(self):
-        return self._available
-
-    def _load_model(self):
-        if self._pipe is None and self._available:
-            try:
-                print(f"Loading ControlNet: {self._controlnet_model}")
-                controlnet = self._ControlNetModel.from_pretrained(
-                    self._controlnet_model,
-                    torch_dtype=self._torch.float16
-                )
-
-                print(f"Loading SD pipeline: {self._sd_model}")
-                self._pipe = self._Pipeline.from_pretrained(
-                    self._sd_model,
-                    controlnet=controlnet,
-                    torch_dtype=self._torch.float16,
-                    safety_checker=None,
-                )
-
-                # Memory optimizations for 6GB VRAM
-                if self._device_str == "auto":
-                    if self._torch.cuda.is_available():
-                        self._pipe.enable_model_cpu_offload()
-                    else:
-                        self._pipe = self._pipe.to("cpu")
-                else:
-                    self._pipe = self._pipe.to(self._device_str)
-
-                try:
-                    self._pipe.enable_xformers_memory_efficient_attention()
-                except Exception:
-                    self._pipe.enable_attention_slicing()
-
-                print("ControlNet pipeline loaded successfully")
-            except Exception as e:
-                print(f"Could not load ControlNet: {e}")
-                self._available = False
-
-    def colorize(self, gray_image):
-        start = time.time()
-
-        if not self._available:
-            raise RuntimeError("ControlNet is not available")
-
-        self._load_model()
-
-        if self._pipe is None:
-            raise RuntimeError("ControlNet pipeline failed to load")
-
-        from PIL import Image
-
-        h, w = gray_image.shape[:2]
-
-        # Convert grayscale to PIL RGB
-        if gray_image.ndim == 2:
-            pil_image = Image.fromarray(gray_image).convert("RGB")
-        else:
-            rgb = cv2.cvtColor(gray_image, cv2.COLOR_BGR2RGB)
-            pil_image = Image.fromarray(rgb)
-
-        # Resize to a multiple of 8 (required by SD)
-        new_w = (w // 8) * 8
-        new_h = (h // 8) * 8
-        pil_image = pil_image.resize((new_w, new_h), Image.BILINEAR)
-
-        # Run diffusion
-        with self._torch.no_grad():
-            result = self._pipe(
-                prompt="high quality, detailed, colorful photograph",
-                image=pil_image,
-                num_inference_steps=self._num_steps,
-                guidance_scale=self._guidance_scale,
-                controlnet_conditioning_scale=1.0,
-            )
-
-        # Convert result to BGR numpy
-        result_rgb = np.array(result.images[0])
-        result_bgr = cv2.cvtColor(result_rgb, cv2.COLOR_RGB2BGR)
-
-        # Resize back to original
-        result_bgr = cv2.resize(result_bgr, (w, h))
-
-        info_dict = {
-            "elapsed_sec": time.time() - start,
-            "model_name": "ControlNet+SD",
-            "category": "Diffusion",
-            "num_inference_steps": self._num_steps,
-            "guidance_scale": self._guidance_scale,
-            "controlnet_model": self._controlnet_model,
-        }
-        return result_bgr, info_dict
-
-
-# =============================================================================
-# Diffusion (InstructPix2Pix): SD-based colorization
-# =============================================================================
-
-class InstructPix2PixColorizer(PretrainedColorizer):
-    """Diffusion-based colorization via a SD InstructPix2Pix fine-tune.
-
-    Picked as the working alternative to the spec'd ControlNet + SD 2.1 stack
-    after Stability AI deprecated the entire SD 2.x line and the SD 1.5 +
-    brightness-ControlNet substitute produced unrelated outputs (PSNR ~6 dB).
-
-    `annyorange/colorization-finetuned` is a self-contained SD pipeline
-    (StableDiffusionInstructPix2PixPipeline structure on HF) where the UNet
-    was fine-tuned to map grayscale -> color while preserving structure
-    via the IP2P architecture. Single model, no separate ControlNet — fits
-    6 GB VRAM with FP16 + CPU offload.
-
-    Category: Diffusion
-    Theory reference: Palette (Saharia et al., CVPR 2022)
-    Practical model: SD-IP2P colorization fine-tune
-    """
-
-    def __init__(self, model="annyorange/colorization-finetuned",
-                 num_inference_steps=20, guidance_scale=7.5,
-                 image_guidance_scale=1.5, device="auto"):
-        self._pipe = None
-        self._model = model
-        self._num_steps = num_inference_steps
-        self._guidance_scale = guidance_scale
-        self._image_guidance_scale = image_guidance_scale
-        self._device_str = device
-        self._available = False
-
-        try:
-            import torch
-            from diffusers import StableDiffusionInstructPix2PixPipeline
-            self._torch = torch
-            self._Pipeline = StableDiffusionInstructPix2PixPipeline
-            self._available = True
-        except ImportError:
-            print("diffusers not available. Install: pip install diffusers transformers accelerate")
-
-    @property
-    def name(self):
-        return "SD-IP2P Colorization (Diffusion)"
-
-    @property
-    def category(self):
-        return "Diffusion"
-
-    @property
-    def is_available(self):
-        return self._available
-
-    def _load_model(self):
-        if self._pipe is not None or not self._available:
-            return
-        print(f"Loading SD-IP2P colorization pipeline: {self._model}")
-        # safety_checker=None: this is a colorization model on natural images,
-        # the safety filter would flag legitimate frames as false positives and
-        # return black. The IP2P fine-tune retains the SD safety_checker on disk
-        # but we don't need it for benchmarking on COCO.
-        self._pipe = self._Pipeline.from_pretrained(
-            self._model,
-            torch_dtype=self._torch.float16,
-            safety_checker=None,
-        )
-        # Memory: 6 GB VRAM can't hold the whole pipeline + activations + grad-
-        # accumulators. CPU offload keeps only the active module on GPU.
-        if self._device_str == "auto":
-            if self._torch.cuda.is_available():
-                self._pipe.enable_model_cpu_offload()
-            else:
-                self._pipe = self._pipe.to("cpu")
-        else:
-            self._pipe = self._pipe.to(self._device_str)
-        try:
-            self._pipe.enable_xformers_memory_efficient_attention()
-        except Exception:
-            self._pipe.enable_attention_slicing()
-        print("SD-IP2P colorization pipeline loaded successfully")
-
-    def colorize(self, gray_image):
-        start = time.time()
-
-        if not self._available:
-            raise RuntimeError("diffusers not installed")
-
-        self._load_model()
-        if self._pipe is None:
-            raise RuntimeError("SD-IP2P pipeline failed to load")
-
-        from PIL import Image
-
-        h, w = gray_image.shape[:2]
-
-        # The IP2P pipeline needs RGB input (it expects 3 channels). For
-        # grayscale colorization we feed it the gray image converted to a
-        # 3-channel pseudo-RGB so each channel is identical.
-        if gray_image.ndim == 2:
-            rgb = cv2.cvtColor(gray_image, cv2.COLOR_GRAY2RGB)
-        else:
-            rgb = cv2.cvtColor(gray_image, cv2.COLOR_BGR2RGB)
-
-        # SD-derived models require dims that are multiples of 8.
-        new_w = max(8, (w // 8) * 8)
-        new_h = max(8, (h // 8) * 8)
-        pil_image = Image.fromarray(rgb).resize((new_w, new_h), Image.BILINEAR)
-
-        # IP2P-style prompt: an instruction. "Colorize" is what the model was
-        # fine-tuned on. guidance_scale controls how much the prompt drives
-        # the change; image_guidance_scale controls structure preservation.
-        with self._torch.no_grad():
-            out = self._pipe(
-                prompt="colorize this image",
-                image=pil_image,
-                num_inference_steps=self._num_steps,
-                guidance_scale=self._guidance_scale,
-                image_guidance_scale=self._image_guidance_scale,
-            )
-
-        result_rgb = np.array(out.images[0])
-        result_bgr = cv2.cvtColor(result_rgb, cv2.COLOR_RGB2BGR)
-        result_bgr = cv2.resize(result_bgr, (w, h))
-
-        info_dict = {
-            "elapsed_sec": time.time() - start,
-            "model_name": "SD-IP2P-Colorization",
-            "category": "Diffusion",
-            "num_inference_steps": self._num_steps,
-            "guidance_scale": self._guidance_scale,
-            "image_guidance_scale": self._image_guidance_scale,
-            "model": self._model,
-        }
-        return result_bgr, info_dict
-
-
-# =============================================================================
 # Factory
 # =============================================================================
 
@@ -652,19 +374,6 @@ def get_comparison_models(cfg):
     if comparison_cfg.get("deoldify", {}).get("enabled", False):
         model = DeOldifyColorizer(
             model_path=comparison_cfg["deoldify"].get("model_path")
-        )
-        if model.is_available:
-            models[model.name] = model
-
-    # Diffusion: ControlNet
-    if comparison_cfg.get("controlnet", {}).get("enabled", False):
-        cn_cfg = comparison_cfg["controlnet"]
-        model = ControlNetColorizer(
-            controlnet_model=cn_cfg.get("controlnet_model",
-                                        "neurallove/controlnet-sd21-colorization-diffusers"),
-            sd_model=cn_cfg.get("sd_model", "stabilityai/stable-diffusion-2-1-base"),
-            num_inference_steps=cn_cfg.get("num_inference_steps", 30),
-            guidance_scale=cn_cfg.get("guidance_scale", 7.5),
         )
         if model.is_available:
             models[model.name] = model

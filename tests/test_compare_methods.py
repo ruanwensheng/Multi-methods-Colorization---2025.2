@@ -1,10 +1,12 @@
 """Tests for tools/compare_methods.py.
 
 The script's docstring advertises a `--methods zhang16,deoldify` filter so users
-can run a subset of the comparison (e.g., skip the ControlNet slot documented as
-a reproducibility gap in T3.5 — its substitute pipeline produces ~6 dB PSNR and
-including it would poison the cross-model summary). The filtering helper lives
-on the tool module so it can be unit tested without launching torch/HF.
+can run a subset of the comparison (e.g., evaluate only Zhang16 + DeOldify when
+iterating). The filtering helper lives on the tool module so it can be unit
+tested without launching torch/HF.
+
+Note: the diffusion paradigm is excluded from the benchmark — see the
+"Why diffusion is excluded" section of reports/.../experiments.tex.
 """
 
 import os
@@ -31,7 +33,6 @@ def test_filter_models_keeps_only_named_slugs():
         "Zhang16 (Ours)": object(),
         "Zhang 2017 (Interactive CNN)": object(),
         "DeOldify (GAN)": object(),
-        "ControlNet (Diffusion)": object(),
     }
     kept = cm.filter_models(models, ["zhang16", "deoldify"])
     assert set(kept) == {"Zhang16 (Ours)", "DeOldify (GAN)"}
@@ -146,20 +147,16 @@ def test_aggregate_from_metrics_builds_summary_and_per_image_rows(tmp_path):
     assert {r["model"] for r in rows} == {"Zhang16 Fine-tuned (Ours)", "DeOldify (GAN)"}
 
 
-def test_aggregate_records_controlnet_as_documented_gap(tmp_path):
-    """ControlNet has no metrics dir; it must appear as a gap, never a fabricated row."""
+def test_aggregate_does_not_emit_controlnet_diffusion_entry(tmp_path):
+    """The diffusion paradigm is excluded from the benchmark; the aggregator
+    must not synthesize a ControlNet (Diffusion) row of any kind."""
     cm = _load_compare_methods_module()
     root = str(tmp_path / "metrics")
     _write_model_metrics(root, "finetuned", psnr_mean=23.29, n_rows=1)
 
     summary, rows = cm.aggregate_from_metrics(root)
 
-    assert "ControlNet (Diffusion)" in summary
-    gap = summary["ControlNet (Diffusion)"]
-    assert gap["status"] == "gap"
-    assert "psnr_mean" not in gap          # no invented number
-    assert gap.get("reason")               # documents why
-    # The gap contributes no per-image rows.
+    assert "ControlNet (Diffusion)" not in summary
     assert all(r["model"] != "ControlNet (Diffusion)" for r in rows)
 
 
@@ -210,7 +207,6 @@ def test_make_bar_chart_writes_png(tmp_path):
             "ssim_mean": 0.92, "ssim_ci_lo": 0.91, "ssim_ci_hi": 0.92,
             "lpips_mean": 0.15, "lpips_ci_lo": 0.14, "lpips_ci_hi": 0.15,
         },
-        "ControlNet (Diffusion)": {"status": "gap", "reason": "x"},
     }
     path = str(tmp_path / "metrics_bar_chart.png")
     cm.make_bar_chart(summary, path)

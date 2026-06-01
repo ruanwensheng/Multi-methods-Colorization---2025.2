@@ -2,12 +2,20 @@
 \label{sec:conclusion}
 
 We reimplemented the Zhang~2016 classification CNN, fine-tuned it on COCO~2017,
-and compared four deep-learning colorization paradigms on a single
+and compared three deep-learning colorization paradigms on a single
 leakage-controlled $1{,}000$-image \texttt{test2017} benchmark, with every
 metric reported as \texttt{mean [95\% CI]}. Our fine-tuned model reaches PSNR
 $23.29$\,dB, SSIM $0.919$, and LPIPS $0.192$, matching the SOTA-class DeOldify
 on structure, trailing it modestly on pixel fidelity and perceptual quality, and
 beating it by roughly $2.8\times$ on inference speed.
+
+A fourth, diffusion paradigm was scoped into the original plan and then
+explicitly excluded once we established that the only openly-available
+colorization checkpoints depended on the deprecated Stable~Diffusion~2.1
+backbone (Sec.~\ref{sec:experiments:no-diffusion}); reporting a degraded
+substitute would have been misleading. The exclusion is itself a finding about
+the open-source ecosystem's exposure to single-backbone deprecation
+(Sec.~\ref{sec:discussion}).
 
 Our practical recommendations follow directly:
 \begin{itemize}
@@ -23,6 +31,6 @@ Our practical recommendations follow directly:
 Two avenues would strengthen the study. First, re-deriving the $313$-bin gamut
 hull would let us load the official ECCV head and report a faithful pretrained
 baseline, isolating the true contribution of fine-tuning. Second, the diffusion
-slot should be revisited once a maintained colorization checkpoint exists that
-does not depend on the deprecated Stable~Diffusion~2.1 backbone, completing the
-four-paradigm comparison with a measured rather than inferred frontier point.
+paradigm should be revisited once a maintained colorization checkpoint exists
+on a still-supported backbone, completing the four-paradigm comparison with a
+measured rather than inferred frontier point.

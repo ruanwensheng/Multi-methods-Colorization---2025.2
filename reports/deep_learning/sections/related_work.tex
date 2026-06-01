@@ -1,12 +1,13 @@
 \section{Related Work}
 \label{sec:related_work}
 
-We organize learning-based colorization into four paradigms that emerged in
-succession, each addressing a limitation of the previous one. This section
-gives the historical and conceptual map; the architectural details of every
-model we evaluate appear in Sec.~\ref{sec:method}.
-Table~\ref{tab:taxonomy} summarizes the taxonomy and maps each paradigm to the
-concrete model we benchmark.
+We organize learning-based colorization into three paradigms that we benchmark,
+plus a brief note on a fourth (diffusion) that we deliberately exclude. The
+three benchmarked paradigms emerged in succession, each addressing a limitation
+of the previous one. This section gives the historical and conceptual map; the
+architectural details of every model we evaluate appear in
+Sec.~\ref{sec:method}. Table~\ref{tab:taxonomy} summarizes the taxonomy and
+maps each paradigm to the concrete model we benchmark.
 
 \subsection{CNN classification (2016)}
 Zhang \emph{et al.}~\cite{zhang2016colorful} treat colorization as per-pixel
@@ -15,7 +16,7 @@ modeling color multimodality and rebalancing the loss toward rare, saturated
 colors. The result was a step change in perceptual vividness and the first
 strong fully-automatic colorizer. This is the model we reimplement
 (Sec.~\ref{sec:method:zhang16}); its design is also the conceptual backbone
-that the next three paradigms either extend or react against.
+that the next two paradigms either extend or react against.
 
 \subsection{Interactive CNN (2017)}
 The follow-up of Zhang \emph{et al.}~\cite{zhang2017realtime} adds a second
@@ -34,22 +35,29 @@ DeOldify~\cite{antic2019deoldify}, whose \emph{NoGAN} recipe stabilizes
 training and produces robust, restoration-grade colorizations
 (Sec.~\ref{sec:method:deoldify}). We use it as a SOTA-class anchor.
 
-\subsection{Diffusion (2022)}
-Conditional diffusion models cast colorization as iterative denoising.
-Palette~\cite{saharia2022palette} frames it as a general image-to-image
-diffusion task, while ControlNet~\cite{zhang2023controlnet} adds spatial
-conditioning to a pretrained text-to-image backbone via a trainable encoder
-copy with zero-convolution adapters (Sec.~\ref{sec:method:controlnet}). We
-attempt a ControlNet pipeline as the diffusion representative;
-Sec.~\ref{sec:results} reports the reproducibility obstacle we encountered.
+\subsection{A note on the diffusion paradigm (excluded)}
+Conditional diffusion models exist as a fourth paradigm in the literature and
+would have been the natural next entry in the comparison. However, every
+well-trained, openly-released diffusion colorization checkpoint we surveyed in
+2026 is anchored to Stable~Diffusion~2.1 as its image backbone, and Stability
+AI has deprecated the entire SD~2.x line upstream---the relevant Hugging Face
+repositories return HTTP~401 even with a valid token. Substituting a different
+backbone (we examined an SD~1.5 brightness-ControlNet, an SD-InstructPix2Pix
+fine-tune, and a Flux-based pipeline) produced either unrelated outputs
+(${\sim}6$\,dB PSNR), failed to fit on consumer hardware, or no longer
+implemented the conditioning channel the comparison would require. Reporting a
+degraded substitute would have been misleading; we therefore omit the
+diffusion paradigm from this study and discuss the implication in
+Sec.~\ref{sec:experiments}.
 
-Evaluation in all four paradigms increasingly relies on learned perceptual
-metrics; we adopt LPIPS~\cite{zhang2018lpips} alongside PSNR and SSIM, and
-benchmark on COCO~2017~\cite{lin2014coco}.
+\medskip
+Evaluation in all benchmarked paradigms increasingly relies on learned
+perceptual metrics; we adopt LPIPS~\cite{zhang2018lpips} alongside PSNR and
+SSIM, and benchmark on COCO~2017~\cite{lin2014coco}.
 
 \begin{table}[t]
 \centering
-\caption{Four colorization paradigms and the models evaluated in this study.}
+\caption{Three colorization paradigms compared in this study.}
 \label{tab:taxonomy}
 \begin{tabular}{@{}llll@{}}
 \toprule
@@ -58,7 +66,6 @@ Paradigm & Representative & Year & Our proxy model \\
 CNN              & Zhang~\cite{zhang2016colorful}      & 2016 & Zhang16 (ours) \\
 Interactive CNN  & Zhang~\cite{zhang2017realtime}      & 2017 & Zhang17 (auto) \\
 GAN              & ChromaGAN~\cite{vitoria2020chromagan} & 2020 & DeOldify \\
-Diffusion        & Palette~\cite{saharia2022palette}   & 2022 & ControlNet \\
 \bottomrule
 \end{tabular}
 \end{table}

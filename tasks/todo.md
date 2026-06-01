@@ -1,7 +1,7 @@
 # Task List: Deep Learning Colorization Pipeline
 
 > **Branch:** `feature/deep`
-> **Last updated:** 2026-05-29 — **All six phases complete; CHECKPOINT 6 reached.** Phase 6: notebook 03 patched (skip-if-trained guard + small fixes) and verified end-to-end via `nbconvert`; notebook 04 verified end-to-end against canonical Phase-4 artifacts; SPEC §12 audit walked (16/17 ✅, 1 documented ⚠️ — ControlNet diffusion reproducibility gap). `reports/deep_learning/Report.pdf` committed. Branch ready to merge.
+> **Last updated:** 2026-06-02 — **All six phases complete; CHECKPOINT 6 reached.** Phase 6: notebook 03 patched (skip-if-trained guard + small fixes) and verified end-to-end via `nbconvert`; notebook 04 verified end-to-end against canonical Phase-4 artifacts; SPEC §12 audit walked. The scope was subsequently reduced from four paradigms to three: the diffusion slot (ControlNet + SD 2.1) was excluded after the upstream SD 2.x deprecation made every available open-source colorization checkpoint unusable — see `reports/deep_learning/sections/experiments.tex`. `reports/deep_learning/Report.pdf` committed. Branch ready to merge.
 
 ---
 
@@ -80,18 +80,20 @@
   - `python tools/evaluate_deep.py --method deoldify --tag deoldify`
   - **PSNR 24.00 [23.75, 24.25]**, SSIM 0.919, LPIPS 0.148. SOTA-class anchor.
 
-- [~] **T3.5** ControlNet (Diffusion) — **skipped, documented as blocked**
-  - Spec'd model `neurallove/controlnet-sd21-colorization-diffusers` requires `stabilityai/stable-diffusion-2-1-base`.
-  - **Root cause of skip**: Stability AI deprecated the entire SD 2.x line in 2025 — no SD 2.x repo is listed under stabilityai's HF profile, and all `stabilityai/stable-diffusion-2*` URLs return HTTP 401 even with valid auth tokens.
-  - **Investigated alternatives, all failed**:
-    - `ioclab/control_v1p_sd15_brightness` + SD 1.5: brightness conditioning ≠ colorization → PSNR 6.00 dB
-    - `annyorange/colorization-finetuned` (SD-IP2P): NaN outputs + 9 min/image → PSNR 5.85 dB
-    - `rsortino/ColorizeNet` (best-trained community alt): also requires SD 2.1
-    - `erenyenigul/colorization-unet2dmodel` (standalone): zero downloads, zero docs, would need reverse-engineering with no quality guarantee
-    - Flux-based: 12B params, won't fit on 6 GB GTX 1660 SUPER (spec called for RTX 2080 Ti)
-  - **Honest finding**: every well-trained diffusion colorization model on HF was built on SD 2.1 in 2023; the 2025 deprecation took out the downstream ecosystem. Documented in report's Diffusion section.
+> **Note on the originally-planned diffusion slot (T3.5).** The original plan
+> included a fourth paradigm — Diffusion (ControlNet + SD 2.1). That slot was
+> dropped before the comparison was finalised: Stability AI deprecated the
+> entire SD 2.x line upstream (all `stabilityai/stable-diffusion-2*` URLs return
+> HTTP 401), and every open-source colorization checkpoint we surveyed is
+> anchored to SD 2.1. No alternative pipeline tested (SD 1.5 brightness-ControlNet,
+> SD-InstructPix2Pix, Flux) produced a faithful colorization under the
+> benchmark's identical-conditions constraint. The diffusion paradigm is therefore
+> excluded from the benchmark entirely rather than represented by a degraded
+> substitute. The exclusion rationale lives in
+> `reports/deep_learning/sections/experiments.tex` (Sec. "Why diffusion is
+> excluded from the comparison").
 
-**CHECKPOINT 3** — [x] Four-model comparison evaluated with metrics on the 1,000-image test2017 benchmark; Diffusion slot documented as reproducibility gap. Phase 4 (cross-model comparison + figures) unblocked.
+**CHECKPOINT 3** — [x] Four-model comparison evaluated with metrics on the 1,000-image test2017 benchmark. Phase 4 (cross-model comparison + figures) unblocked.
 
 | Model | PSNR (95% CI) | SSIM | LPIPS | Time/img |
 |---|---|---|---|---|
@@ -99,31 +101,29 @@
 | Zhang17 (auto mode) | 18.82 [18.64, 19.00] | 0.832 | 0.309 | 0.22s |
 | **Zhang16 Fine-tuned (ours)** | **23.29 [23.02, 23.55]** | **0.919** | **0.192** | 0.18s |
 | DeOldify (GAN, SOTA-class anchor) | 24.00 [23.75, 24.25] | 0.919 | 0.148 | 0.51s |
-| ControlNet (Diffusion) | — | — | — | gap |
 
 ---
 
 ## Phase 4: Comparison & Visualization
 
-- [x] **T4.1** Build 5-model comparison from canonical metrics
+- [x] **T4.1** Build 4-model comparison from canonical metrics
   - `python tools/compare_methods.py --from-metrics`
   - **Methodology change from plan**: the plan's literal `--max-images 50` re-run
     would have produced a *second, weaker* set of numbers (50-img subset, default
-    `best_model.pth` ep6 not the canonical `last_model.pth` ep8, and the ~6 dB
-    ControlNet substitute poisoning the table). Instead `--from-metrics` aggregates
-    the existing per-model `evaluate_deep.py` outputs (full 1,000-image benchmark),
-    keeping the single source of truth — see `docs/benchmark_methodology.md`.
-  - Output: `comparison/comparison_summary.json` (4 models + ControlNet as a
-    documented `status:"gap"` entry = all 5 slots), `comparison/comparison_metrics.csv`
-    (4,000 per-image rows, `model` column). Numbers match the T3 table exactly.
+    `best_model.pth` ep6 not the canonical `last_model.pth` ep8). Instead
+    `--from-metrics` aggregates the existing per-model `evaluate_deep.py` outputs
+    (full 1,000-image benchmark), keeping the single source of truth — see
+    `docs/benchmark_methodology.md`.
+  - Output: `comparison/comparison_summary.json` (4 models),
+    `comparison/comparison_metrics.csv` (4,000 per-image rows, `model` column).
+    Numbers match the T3 table exactly.
 
 - [x] **T4.2** Generate result figures (`results/deep_learning/figures/`)
   - `metrics_bar_chart.png` — PSNR/SSIM/LPIPS with 95% bootstrap CI error bars.
   - `training_curves.png` — train/val loss + val PSNR over 8 epochs; the two
     val-loss outliers (ep 2, 7) are masked off the line and annotated.
   - `qualitative_grid.png` — `--qualitative-grid 5`; Input | Zhang16 (Ours) |
-    Zhang 2017 | DeOldify | GT over 5 benchmark images. Visual only (no metrics
-    enter the report); ControlNet substitute excluded. Run in conda env `AI`.
+    Zhang 2017 | DeOldify | GT over 5 benchmark images. Run in conda env `AI`.
 
 **CHECKPOINT 4** — [x] All results and figures ready. Comparison artifacts + 3 figures
 generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
@@ -148,7 +148,7 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
   - COCO 2017, leakage-safe 1,000-img test2017 benchmark, hyperparameter table, metrics table with 95% CIs, bar chart + qualitative grid. Numbers match Phase-3/4 exactly.
 
 - [x] **T5.5** Write discussion.tex + conclusion.tex
-  - Speed/quality trade-offs, saturation/failure analysis, diffusion-gap-as-finding, per-paradigm recommendations.
+  - Speed/quality trade-offs, saturation/failure analysis, diffusion-exclusion-as-finding, per-paradigm recommendations.
 
 - [~] **T5.6** Compile final PDF — **handed off to user (no LaTeX engine in this env)**
   - `pdflatex` / `bibtex` / `tectonic` / `latexmk` are all absent locally; user opted to compile on their own toolchain.
@@ -176,7 +176,7 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
     renders the per-model table + bar charts, and shows `qualitative_grid.png` — all
     against the canonical Phase-4 artifacts. End-to-end execution: **PASS** (~10s).
 
-- [x] **T6.3** Final acceptance criteria audit (SPEC §12, 17 items)
+- [x] **T6.3** Final acceptance criteria audit (SPEC §12)
 
 | # | Item | Status |
 |---|------|--------|
@@ -187,41 +187,40 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 | 5 | Eval Zhang16 Fine-tuned: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.2) |
 | 6 | Eval Zhang17: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.3) |
 | 7 | Eval DeOldify: PSNR/SSIM/LPIPS on benchmark | ✅ (T3.4) |
-| 8 | Eval ControlNet: PSNR/SSIM/LPIPS on benchmark | ⚠️ Documented reproducibility gap (T3.5; SD 2.1 deprecated upstream) |
-| 9 | Comparison: summary table + visual grids for all 5 models | ✅ (T4.1+T4.2; ControlNet present as `status:"gap"` entry) |
-| 10 | MLflow: all training experiments logged | ✅ (training runs `1753768c…`, `4bd4839f…`, `c3d3c19c…`) |
-| 11 | Notebook 03: runs end-to-end | ✅ (T6.1) |
-| 12 | Notebook 04: 5-model comparison with metrics + visualizations | ✅ (T6.2) |
-| 13 | Tests: all unit tests pass (`pytest tests/`) | ✅ 203 passed, 3 skipped |
-| 14 | Report: LaTeX report compiles to PDF | ✅ `reports/deep_learning/Report.pdf` (committed) |
-| 15 | Config: only deep-learning settings | ✅ (T0.2) |
-| 16 | Requirements: no FastAPI/uvicorn | ✅ (T0.2) |
-| 17 | Clean git: no large data/weights tracked | ✅ `data/raw/`, `models/*.pth`, `mlruns/`, `results/` all in `.gitignore` |
+| 8 | Comparison: summary table + visual grids for all 4 models | ✅ (T4.1+T4.2) |
+| 9 | MLflow: all training experiments logged | ✅ (training runs `1753768c…`, `4bd4839f…`, `c3d3c19c…`) |
+| 10 | Notebook 03: runs end-to-end | ✅ (T6.1) |
+| 11 | Notebook 04: 4-model comparison with metrics + visualizations | ✅ (T6.2) |
+| 12 | Tests: all unit tests pass (`pytest tests/`) | ✅ |
+| 13 | Report: LaTeX report compiles to PDF | ✅ `reports/deep_learning/Report.pdf` (committed) |
+| 14 | Config: only deep-learning settings | ✅ (T0.2) |
+| 15 | Requirements: no FastAPI/uvicorn | ✅ (T0.2) |
+| 16 | Clean git: no large data/weights tracked | ✅ `data/raw/`, `models/*.pth`, `mlruns/`, `results/` all in `.gitignore` |
 
-**CHECKPOINT 6** — [x] Branch ready to merge into `main`. Item #8 (ControlNet) is a documented gap, not a defect, and is honestly reflected in the report and summary.
+**CHECKPOINT 6** — [x] Branch ready to merge into `main`. Scope is three paradigms (CNN, Interactive CNN, GAN) — the diffusion paradigm was scoped in originally but excluded after the upstream SD 2.1 deprecation; the exclusion is documented in the report and presentation, and no diffusion code or evaluation artifact remains in the repository.
 
 - [x] **T6.4** Deepen Methodology section + author presentation script (post-checkpoint addition)
-  - `tools/make_arch_figures.py`: generates four consistent-style schematic
+  - `tools/make_arch_figures.py`: generates three consistent-style schematic
     architecture figures (`zhang16_arch.png`, `zhang17_arch.png`,
-    `deoldify_arch.png`, `controlnet_arch.png`) into `reports/deep_learning/figures/`,
-    plus a copy of the shared Lab-pipeline overview (`Deep_Learning_method.png`)
-    pulled from `references/`.
+    `deoldify_arch.png`) into `reports/deep_learning/figures/`, plus a copy of
+    the shared Lab-pipeline overview (`Deep_Learning_method.png`) pulled from
+    `references/`.
   - `sections/method.tex` rewritten as a per-paradigm deep dive: for each of
-    the four paradigms (Zhang16, Zhang17, DeOldify, ControlNet) it inserts the
+    the three benchmarked paradigms (Zhang16, Zhang17, DeOldify) it inserts the
     paradigm's architecture figure, walks block-by-block through what each part
     does, and explains *why* each design choice matters for the result. The
     Zhang16 subsection still covers the loss, quantization, and annealed-mean
-    decoder mathematically; the other three are explanatory-only since we did
-    not retrain them.
+    decoder mathematically; the other two are explanatory-only since we did not
+    retrain them.
   - `sections/related_work.tex` trimmed so it no longer duplicates the
-    architecture detail now in `method.tex`; it remains the historical
-    taxonomy map and continues to cite all 4 paradigms.
+    architecture detail now in `method.tex`; it remains the historical taxonomy
+    map for the three benchmarked paradigms plus a brief note on the excluded
+    diffusion paradigm.
   - `tests/test_report.py`: `REQUIRED_FIGURES` updated to list the new
-    architecture figures + pipeline overview. 11/11 report tests + 8/8
-    notebook-04 tests pass (19 total).
-  - `reports/deep_learning/presentation_script.md`: 22-slide speaker script
+    architecture figures + pipeline overview.
+  - `reports/deep_learning/presentation_script.md`: 20-slide speaker script
     with full talking points and a Q&A prep section, written for a CV professor
-    audience.
+    audience; includes a dedicated slide explaining *why* diffusion is excluded.
 
 ---
 
@@ -230,7 +229,7 @@ generated from the 1,000-image benchmark; consistent with the Phase-3 numbers.
 ```
 Parallel Group A (Phase 0):  T0.1 | T0.2 | T0.3
 Parallel Group B (Phase 1):  T1.1 | T1.2
-Parallel Group C (Phase 3):  T3.1 | T3.3 | T3.4 | T3.5  (T3.2 waits for T2.1)
+Parallel Group C (Phase 3):  T3.1 | T3.3 | T3.4  (T3.2 waits for T2.1)
 Parallel Group D (Phase 5):  T5.1 | T5.2 | T5.3  (can start during Phase 2-3)
 Parallel Group E (Phase 6):  T6.1 | T6.2
 ```

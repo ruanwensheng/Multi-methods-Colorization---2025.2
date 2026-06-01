@@ -4,8 +4,8 @@
 \subsection{Quantitative comparison}
 Table~\ref{tab:results} reports the three metrics with $95\%$ bootstrap
 confidence intervals on the $1{,}000$-image \texttt{test2017} benchmark;
-Fig.~\ref{fig:bars} visualizes the same numbers. Four of the five model slots
-are populated; the diffusion slot is a documented gap discussed below.
+Fig.~\ref{fig:bars} visualizes the same numbers. The diffusion paradigm is
+deliberately excluded from the comparison (Sec.~\ref{sec:experiments:no-diffusion}).
 
 \begin{table*}[t]
 \centering
@@ -21,7 +21,6 @@ Zhang16 Pretrained (ECCV)$^{\dagger}$ & $17.14$ $[16.97, 17.30]$ & $0.700$ $[0.6
 Zhang17 (automatic mode)              & $18.82$ $[18.64, 19.00]$ & $0.832$ $[0.827, 0.838]$ & $0.309$ $[0.304, 0.315]$ & $0.22$ \\
 Zhang16 Fine-tuned (ours)             & $23.29$ $[23.02, 23.55]$ & $\mathbf{0.919}$ $[0.915, 0.923]$ & $0.192$ $[0.187, 0.197]$ & $0.18$ \\
 DeOldify (GAN)                        & $\mathbf{24.00}$ $[23.75, 24.25]$ & $0.919$ $[0.915, 0.922]$ & $\mathbf{0.148}$ $[0.144, 0.152]$ & $0.51$ \\
-ControlNet (Diffusion)                & \multicolumn{4}{c}{--- reproducibility gap (see Sec.~\ref{sec:results}\,\&\,\ref{sec:discussion}) ---} \\
 \bottomrule
 \end{tabular}
 \\[2pt]
@@ -44,8 +43,7 @@ fine-tuned model and DeOldify produce coherent, naturally-colored results;
 DeOldify is the most saturated and closest to the ground truth, while ours is
 slightly more conservative on large ambiguous regions (skies, foliage).
 Zhang17 in automatic mode exhibits the characteristic color blotches and
-bleeding of a hint-driven model deprived of hints, which explains its low
-scores.
+bleeding of a hint-driven model deprived of hints, which explains its low scores.
 
 \begin{figure*}[t]
   \centering
@@ -133,11 +131,3 @@ richer, more confident saturation.
 \textbf{Automatic mode handicaps the interactive CNN.} Zhang17 was designed for
 user-guided use; with zero hints it underperforms even the conservative CNN,
 confirming that its strength lies in interactivity rather than autonomy.
-
-\textbf{The diffusion slot could not be reproduced.} The specified pipeline
-requires Stable~Diffusion~2.1, which Stability~AI deprecated upstream; every
-well-trained diffusion colorization checkpoint we found was built on that
-now-unavailable backbone. Substitutes (an SD~1.5 brightness-ControlNet and an
-SD-InstructPix2Pix fine-tune) produced unrelated or degenerate outputs
-(${\sim}6$\,dB PSNR) and would have poisoned the comparison, so we report the
-slot as an honest gap rather than a misleading number.

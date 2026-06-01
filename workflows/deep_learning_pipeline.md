@@ -3,8 +3,12 @@
 ## Objective
 Train and evaluate a CNN-based automatic colorization model (Zhang et al. 2016) 
 on COCO 2017, and compare with:
+- Interactive CNN: Zhang 2017 (SIGGRAPH) in automatic mode
 - GAN: DeOldify (theory: ChromaGAN, Vitoria 2020)
-- Diffusion: ControlNet + SD (theory: Palette, Saharia 2022)
+
+A fourth diffusion paradigm was originally scoped in but excluded after the
+upstream deprecation of Stable Diffusion 2.1 — see
+`reports/deep_learning/sections/experiments.tex` for the rationale.
 
 ## Prerequisites
 - Python 3.10+ with CUDA PyTorch installed

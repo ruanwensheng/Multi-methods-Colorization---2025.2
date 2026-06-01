@@ -22,14 +22,6 @@ class TestPretrainedAPI:
         assert hasattr(model, "category")
         assert hasattr(model, "is_available")
 
-    def test_controlnet_has_required_properties(self):
-        from src.deep_learning.pretrained import ControlNetColorizer
-        model = ControlNetColorizer()
-        assert hasattr(model, "colorize")
-        assert hasattr(model, "name")
-        assert hasattr(model, "category")
-        assert hasattr(model, "is_available")
-
 
 class TestModelCategories:
     """Test that models report correct categories."""
@@ -41,10 +33,6 @@ class TestModelCategories:
     def test_deoldify_category(self):
         from src.deep_learning.pretrained import DeOldifyColorizer
         assert DeOldifyColorizer().category == "GAN"
-
-    def test_controlnet_category(self):
-        from src.deep_learning.pretrained import ControlNetColorizer
-        assert ControlNetColorizer().category == "Diffusion"
 
 
 class TestModelNames:
@@ -62,36 +50,23 @@ class TestModelNames:
         assert "DeOldify" in name
         assert "GAN" in name
 
-    def test_controlnet_name(self):
-        from src.deep_learning.pretrained import ControlNetColorizer
-        name = ControlNetColorizer().name
-        assert "ControlNet" in name
-        assert "Diffusion" in name
 
+class TestNoDiffusionWrapper:
+    """Guard against accidental re-introduction of the excluded diffusion paradigm.
 
-class TestInstructPix2PixColorizer:
-    """SD-IP2P colorization is the working alternative to deprecated SD 2.1.
-
-    Stability AI removed the entire SD 2.x line; the SD 1.5 + brightness-
-    ControlNet substitute produced PSNR ~6 dB (model invented unrelated
-    content). InstructPix2PixColorizer uses a self-contained SD-IP2P fine-tune
-    that's purpose-trained for colorization.
+    The diffusion paradigm was deliberately excluded from the benchmark after
+    the upstream SD 2.1 deprecation (see reports/.../experiments.tex). This
+    test fails if anyone restores a ControlNet/InstructPix2Pix wrapper to
+    pretrained.py without updating the spec.
     """
 
-    def test_has_required_properties(self):
-        from src.deep_learning.pretrained import InstructPix2PixColorizer
-        m = InstructPix2PixColorizer()
-        assert hasattr(m, "colorize")
-        assert hasattr(m, "name")
-        assert hasattr(m, "is_available")
-
-    def test_reports_diffusion_category(self):
-        from src.deep_learning.pretrained import InstructPix2PixColorizer
-        assert InstructPix2PixColorizer().category == "Diffusion"
-
-    def test_name_says_diffusion(self):
-        from src.deep_learning.pretrained import InstructPix2PixColorizer
-        assert "Diffusion" in InstructPix2PixColorizer().name
+    def test_pretrained_module_has_no_diffusion_class(self):
+        import src.deep_learning.pretrained as p
+        for cls in ("ControlNetColorizer", "InstructPix2PixColorizer"):
+            assert not hasattr(p, cls), (
+                f"{cls} re-introduced; diffusion paradigm is excluded — "
+                "see reports/deep_learning/sections/experiments.tex"
+            )
 
 
 class TestVendoredColorizers:

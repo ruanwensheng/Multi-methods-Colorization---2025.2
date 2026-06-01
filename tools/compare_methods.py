@@ -99,16 +99,6 @@ _EVALUATED_MODELS = [
     ("deoldify",   "DeOldify (GAN)",               "GAN"),
 ]
 
-# The spec'd 5th model. Every well-trained diffusion colorizer on HF was built on
-# the now-deprecated SD 2.1 (see tasks/todo.md T3.5), so the Diffusion slot is
-# recorded as a documented gap — never a fabricated metric row.
-_DIFFUSION_GAP = (
-    "ControlNet (Diffusion)",
-    "Diffusion",
-    "SD 2.1 deprecated upstream; no reproducible diffusion baseline (see T3.5).",
-)
-
-
 def aggregate_from_metrics(metrics_root):
     """Assemble the cross-model comparison from per-model evaluate_deep.py outputs.
 
@@ -121,9 +111,9 @@ def aggregate_from_metrics(metrics_root):
 
     Returns:
         (summary, rows):
-          summary: dict display_name -> aggregate entry. Evaluated models carry
-                   ``status="ok"`` plus the evaluate_deep.py fields and a
-                   ``category``; the Diffusion slot is a ``status="gap"`` entry.
+          summary: dict display_name -> aggregate entry. Each evaluated model
+                   carries ``status="ok"`` plus the evaluate_deep.py fields and
+                   a ``category``.
           rows:    list of per-image dicts, each tagged with a ``model`` column
                    (the display name) so notebook 04's groupby("model") works.
     """
@@ -152,8 +142,6 @@ def aggregate_from_metrics(metrics_root):
                         "elapsed_sec": r.get("elapsed_sec", ""),
                     })
 
-    gap_name, gap_category, gap_reason = _DIFFUSION_GAP
-    summary[gap_name] = {"status": "gap", "category": gap_category, "reason": gap_reason}
     return summary, rows
 
 
@@ -253,7 +241,6 @@ def write_comparison_artifacts(summary, rows, output_dir):
 def make_bar_chart(summary, save_path):
     """Render PSNR/SSIM/LPIPS bar charts with 95% CI error bars for evaluated models.
 
-    Only ``status="ok"`` entries are plotted (the Diffusion gap has no numbers).
     Bars are sorted best-first per metric (LPIPS is lower-is-better).
     """
     ok = {n: e for n, e in summary.items() if e.get("status") == "ok"}
@@ -335,14 +322,13 @@ def make_training_curves(training_log_path, save_path, loss_ymax=5.0):
 
 
 def load_evaluated_models(cfg, ft_path, pretrained_path=None, device="auto"):
-    """Load the four evaluated models (ControlNet excluded) for a qualitative grid.
+    """Load the four evaluated models for a qualitative grid.
 
     Differs from ``load_all_models`` in that it instantiates Zhang16 *twice*
     with explicit labels --- the pretrained ECCV-init model and our fine-tuned
     checkpoint --- so the figure can show, in one frame, what fine-tuning bought
     visually. Third-party comparisons (Zhang17, DeOldify) are added through
-    ``get_comparison_models``; the Diffusion slot is dropped (see T3.5).
-    Returned dict order = column order in the grid.
+    ``get_comparison_models``. Returned dict order = column order in the grid.
     """
     models = {}
     if pretrained_path and os.path.exists(pretrained_path):
@@ -360,8 +346,6 @@ def load_evaluated_models(cfg, ft_path, pretrained_path=None, device="auto"):
         except Exception as e:
             print(f"  Zhang16 Fine-tuned load failed: {e}")
     for name, m in get_comparison_models(cfg).items():
-        if "controlnet" in name.lower() or "diffusion" in name.lower():
-            continue  # documented reproducibility gap; would poison the figure
         models[name] = m
         print(f"  Loaded: {name}")
     return models

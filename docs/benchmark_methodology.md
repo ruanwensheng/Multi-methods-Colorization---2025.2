@@ -66,7 +66,7 @@ have contributed (along with the other 4,000) to deciding **which checkpoint bec
 either gradient updates or checkpoint selection, so it gives a clean estimate of generalization.
 
 **Important nuance:** the leakage applies *specifically to our Zhang16 Fine-tuned model*. The
-other 4 models (Zhang16 Pretrained, Zhang17, DeOldify, ControlNet) were trained on their own
+other 3 models (Zhang16 Pretrained, Zhang17, DeOldify) were trained on their own
 datasets (ImageNet, web crawl, etc.), and they have whatever contamination they have regardless
 of whether we benchmark on val2017 or test2017. Switching the benchmark to test2017 does **not**
 change the picture for those models — it just gives Zhang16 Fine-tuned a fair shake without
@@ -81,15 +81,14 @@ benchmark came from val2017.
 
 ## 3. Why 1,000 images
 
-Compute budget at the speed of the slowest model (ControlNet, ~1 min/image including 30
-diffusion steps):
+Compute budget at the speed of the slowest benchmarked model (DeOldify, ~0.5 s/image):
 
-| n  | All-5-models eval wall-clock | Standard error of PSNR mean (σ≈5 dB) |
+| n  | All-4-models eval wall-clock | Standard error of PSNR mean (σ≈5 dB) |
 |---:|---|---|
-|   500 | ~8 h  | ±0.224 dB |
-| **1,000** | **~16 h (overnight)** | **±0.158 dB** |
-| 2,000 | ~33 h (multi-day) | ±0.112 dB |
-| 40,670 (full test2017) | ~28 days for ControlNet alone | ±0.025 dB |
+|   500 | ~10 min | ±0.224 dB |
+| **1,000** | **~20 min** | **±0.158 dB** |
+| 2,000 | ~40 min | ±0.112 dB |
+| 40,670 (full test2017) | ~14 h | ±0.025 dB |
 
 At 1,000 images, the standard error of the PSNR mean is already 15× narrower than typical
 between-model gaps (0.5–3 dB). Going larger gives diminishing returns on statistical power and
@@ -308,8 +307,9 @@ A: The CIs overlap heavily — the difference is not statistically significant a
 Treat them as a tie. (Formal test: paired bootstrap on the per-image differences.)
 
 **Q: Can I add a new comparison model?**
-A: Yes, but document why it's outside the 4-category taxonomy (CNN / Interactive CNN / GAN /
-Diffusion). Run it on the same `benchmark/` with the same bootstrap settings. Update SPEC.md.
+A: Yes, but document where it sits in the taxonomy (CNN / Interactive CNN / GAN are
+benchmarked; Diffusion is the explicitly-excluded fourth category — see SPEC §2). Run it
+on the same `benchmark/` with the same bootstrap settings. Update SPEC.md.
 
 **Q: Can I change `n=1,000` or the strata?**
 A: That invalidates all prior numbers. If you do, bump SPEC §6.3, this document, and add a

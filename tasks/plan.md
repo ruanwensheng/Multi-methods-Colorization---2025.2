@@ -56,7 +56,6 @@ Phase 3: Evaluation (parallel per model) ───┐
   T3.2 Eval Zhang16 Fine-tuned              │ ← blocked by T2.1
   T3.3 Eval Zhang17 (Interactive CNN)       │
   T3.4 Eval DeOldify (GAN)                 │
-  T3.5 Eval ControlNet (Diffusion)          │
                                              ▼
 Phase 4: Comparison & Visualization ────────┐
   T4.1 Run compare_methods.py               │
@@ -94,11 +93,11 @@ Phase 6: Final Verification ────────────────
 - **Acceptance:** Config has only `project`, `paths`, `image`, `deep_learning`, `evaluation`, `device`. Requirements has no fastapi/uvicorn, no encoding artifacts.
 - **Verification:** `python -c "from src.deep_learning.utils import load_config; cfg = load_config('configs/config.yaml'); print('OK')"` and `pip install -r requirements.txt --dry-run`
 
-### T0.3 — Rewrite notebook 04 for 5-model DL comparison
-- **What:** Replace cross-method content with 5-model DL comparison (Zhang16 Pretrained, Zhang16 Fine-tuned, Zhang17, DeOldify, ControlNet)
+### T0.3 — Rewrite notebook 04 for 4-model DL comparison
+- **What:** Replace cross-method content with 4-model DL comparison (Zhang16 Pretrained, Zhang16 Fine-tuned, Zhang17, DeOldify)
 - **Why:** Current content compares scribble/example/DL — that belongs on `main`, not this branch
 - **Structure:** Load comparison results, show metrics table, bar charts, qualitative grids, per-model analysis
-- **Acceptance:** Notebook references all 5 DL models, loads from `results/deep_learning/comparison/`, produces visualizations
+- **Acceptance:** Notebook references all 4 DL models, loads from `results/deep_learning/comparison/`, produces visualizations
 - **Verification:** Notebook cells run without import errors (data-dependent cells can show "no data" gracefully)
 
 **CHECKPOINT 0:** Tests green, config clean, notebook 04 corrected. No execution artifacts yet.
@@ -179,14 +178,12 @@ The benchmark images were never seen during fine-tuning or best-checkpoint selec
 - **Risk:** DeOldify + fastai dependency conflicts. May need separate env (document in workflow).
 - **Acceptance:** JSON with metrics or documented "N/A"
 
-### T3.5 — Evaluate ControlNet (Diffusion)
-- **Prerequisites:** `pip install diffusers transformers accelerate`, ~10GB VRAM (RTX 2080 Ti)
-- **Command:** `python tools/evaluate_deep.py --model controlnet --tag controlnet`
-- **Output:** `results/deep_learning/metrics/controlnet_metrics.json`
-- **Risk:** Needs RTX 2080 Ti. Very slow (30 inference steps per image). May need `--max-images 50`.
-- **Acceptance:** JSON with metrics or documented "N/A"
+**CHECKPOINT 3:** All 4 models evaluated. Individual metrics available.
 
-**CHECKPOINT 3:** All 5 models evaluated. Individual metrics available.
+> Note: a fifth slot (Diffusion = ControlNet + SD 2.1) was originally planned
+> but was dropped before this plan was rewritten — Stability AI deprecated the
+> SD 2.x line upstream and no substitute met the benchmark's identical-conditions
+> requirement. See `reports/deep_learning/sections/experiments.tex`.
 
 ---
 
@@ -200,7 +197,7 @@ The benchmark images were never seen during fine-tuning or best-checkpoint selec
   - `results/deep_learning/comparison/comparison_summary.json`
   - `results/deep_learning/comparison/comparison_metrics.csv`
   - `results/deep_learning/comparison/comparison_grids/` (visual grids)
-- **Acceptance:** Summary JSON has all 5 models, CSV has per-image rows
+- **Acceptance:** Summary JSON has all 4 models, CSV has per-image rows
 
 ### T4.2 — Generate figures
 - **Output:**
@@ -221,13 +218,13 @@ The benchmark images were never seen during fine-tuning or best-checkpoint selec
 ### T5.1 — Create report directory structure + references.bib
 - **Create:** `reports/deep_learning/` with `main.tex`, `sections/`, `figures/`, `references.bib`
 - **main.tex:** IEEEtran class, `\input{}` for each section
-- **references.bib:** All 8 required BibTeX entries (Zhang16, Zhang17, ChromaGAN, DeOldify, Palette, ControlNet, COCO, LPIPS)
+- **references.bib:** Required BibTeX entries (Zhang16, Zhang17, ChromaGAN, DeOldify, COCO, LPIPS; Palette + ControlNet kept only as references for the excluded diffusion paradigm)
 - **Acceptance:** `pdflatex main.tex` runs without missing-file errors (sections can be empty stubs)
 
 ### T5.2 — Write introduction + related_work
 - **Can start early** (no dependency on execution results)
 - **introduction.tex:** Problem statement, motivation for DL approaches, chapter overview
-- **related_work.tex:** 4-paradigm taxonomy (CNN → Interactive → GAN → Diffusion), cite all 6 papers
+- **related_work.tex:** 3 benchmarked paradigms (CNN → Interactive → GAN) + brief note on the excluded diffusion paradigm
 - **Acceptance:** Compiles, citations resolve, ~2-3 pages combined
 
 ### T5.3 — Write method (Zhang16 architecture)
@@ -290,7 +287,7 @@ The benchmark images were never seen during fine-tuning or best-checkpoint selec
 | Phase 0 | 30 min | Code fixes, fast |
 | Phase 1 | 1-4 hours | Download speed dependent (18GB COCO) |
 | Phase 2 | 4-12 hours | GPU training time (50 epochs on 118K images) |
-| Phase 3 | 2-6 hours | ControlNet is slowest (~1 min/image × 500 images) |
+| Phase 3 | 30-60 min | All 4 benchmarked models are single-pass; DeOldify is the slowest at ~0.5 s/image |
 | Phase 4 | 1-2 hours | compare_methods on 50 images |
 | Phase 5 | 3-5 hours | Writing + compiling LaTeX |
 | Phase 6 | 1 hour | Verification |
@@ -306,5 +303,4 @@ The benchmark images were never seen during fine-tuning or best-checkpoint selec
 | Training diverges | Low | Reduce LR, increase batch norm momentum, check data pipeline |
 | VRAM overflow (GTX 1660) | Medium | Reduce batch_size to 4→2, enable gradient checkpointing |
 | DeOldify deps conflict | High | Install in separate conda env, document in workflow |
-| ControlNet too slow / OOM | High | Use RTX 2080 Ti, reduce max-images to 50, or mark N/A |
 | LaTeX compilation fails | Low | Use basic IEEEtran template, fix one error at a time |

@@ -2,7 +2,7 @@
 
 > Course: Computer Vision · Branch: `feature/deep` · Target audience: professor + classmates
 >
-> Estimated duration: **15-18 min talk** + 5 min Q&A.
+> Estimated duration: **13-15 min talk** + 5 min Q&A.
 > Pair each slide title below with the matching figure from `reports/deep_learning/figures/`.
 > Speaker notes are written as **what to say** (full sentences), not bullet outlines.
 
@@ -18,8 +18,8 @@
 > of colorization approaches on separate branches — scribble-based,
 > example-based, and deep learning. I worked the deep-learning branch, where I
 > reimplemented one classical method from scratch, fine-tuned it on COCO 2017,
-> and benchmarked it against three other pretrained systems that span the four
-> major deep-learning paradigms.
+> and benchmarked it against two other pretrained systems that span three
+> deep-learning paradigms.
 
 ---
 
@@ -53,18 +53,17 @@
 > CNNs produced the characteristic washed-out, sepia-tinted outputs that you
 > may have seen.
 >
-> This is a real obstacle, and the whole story of the four deep-learning
-> paradigms is the story of how each generation tries to *avoid the
-> desaturation trap*.
+> This is a real obstacle, and the whole story of the deep-learning paradigms
+> I'll cover is how each generation tries to *avoid the desaturation trap*.
 
 ---
 
-## Slide 4 — Four paradigms in 30 seconds
+## Slide 4 — Three paradigms in 30 seconds
 
-**Show:** The taxonomy table from `related_work.tex` (Table 1) — CNN, Interactive CNN, GAN, Diffusion with years and our proxy models.
+**Show:** The taxonomy table from `related_work.tex` (Table 1) — CNN, Interactive CNN, GAN with years and proxy models.
 
 **Say:**
-> Here are the four paradigms, in chronological order:
+> Here are the three paradigms I benchmark, in chronological order:
 >
 > - **2016 — CNN classification.** Zhang et al. reframe the problem as
 >   per-pixel classification over a quantized color palette. This is the
@@ -73,21 +72,62 @@
 >   can paint sparse color points. We evaluate it without hints.
 > - **2020 — GAN.** The training objective becomes adversarial. DeOldify is
 >   our SOTA-class anchor.
-> - **2022 — Diffusion.** Colorization as iterative denoising under spatial
->   conditioning. We attempt ControlNet plus Stable Diffusion 2.1.
 >
-> I'm going to walk through each architecture, explain what's actually
-> *inside* the network, and tell you what each design choice buys at evaluation
-> time.
+> A fourth paradigm — **conditional diffusion (2022 onward)** — would be
+> next in the historical sequence. I'll explain in a moment why I deliberately
+> excluded it from the comparison rather than substitute a degraded model.
+>
+> For the three I do benchmark, I'm going to walk through each architecture,
+> explain what's actually *inside* the network, and tell you what each design
+> choice buys at evaluation time.
 
 ---
 
-## Slide 5 — Common pipeline (Lab space)
+## Slide 5 — Why diffusion is excluded (be ready, prof will ask)
+
+**Show:** A text-only slide titled "Why diffusion is excluded" with three bullets.
+
+**Say:**
+> I want to address the diffusion question up front because it's the most
+> obvious thing missing.
+>
+> The original project plan included a diffusion paradigm represented by
+> **ControlNet conditioning a pretrained Stable Diffusion 2.1 backbone**.
+> Every well-trained openly-released colorization checkpoint I could find in
+> 2026 — and I checked many — is built on SD 2.1 as the image backbone.
+>
+> The problem: **Stability AI deprecated the entire SD 2.x line upstream.**
+> The relevant Hugging Face repositories return HTTP 401 even with a valid
+> token. There is no public mirror with licensed access.
+>
+> I tried three substitutions before deciding to exclude the paradigm
+> entirely:
+>
+> - An **SD 1.5 brightness-ControlNet** — wrong conditioning channel,
+>   produced PSNR around 6 dB, worse than a constant-gray output.
+> - An **SD-InstructPix2Pix** colorization fine-tune — emitted NaN tensors and
+>   required about 9 minutes per image; not a usable pipeline.
+> - A **Flux-based** colorizer — 12 billion parameters; doesn't fit on the
+>   6 GB GPU I used for everything else, so it would have broken the
+>   "identical conditions" requirement.
+>
+> Reporting any of these next to faithfully-evaluated systems would have been
+> **misleading**, so I exclude the paradigm and report this exclusion in the
+> paper as a finding in its own right: a paradigm whose entire downstream
+> ecosystem depends on a single backbone is exposed to that backbone's
+> lifecycle decisions. SD 2.1's deprecation took the diffusion-colorization
+> stack with it.
+>
+> So the rest of this talk is a **three-paradigm** comparison.
+
+---
+
+## Slide 6 — Common pipeline (Lab space)
 
 **Show:** `figures/Deep_Learning_method.png`
 
 **Say:**
-> Before the per-paradigm differences, here is the structure that all four
+> Before the per-paradigm differences, here is the structure that all three
 > share. We convert the input to Lab. The model takes the L channel only
 > and predicts the $ab$ channels. We then recombine $L$ with the predicted
 > $ab$ and convert back to RGB.
@@ -99,7 +139,7 @@
 
 ---
 
-## Slide 6 — Paradigm 1: Zhang 2016 architecture
+## Slide 7 — Paradigm 1: Zhang 2016 architecture
 
 **Show:** `figures/zhang16_arch.png` — the 8-block CNN diagram.
 
@@ -128,7 +168,7 @@
 
 ---
 
-## Slide 7 — Paradigm 1: classification over a quantized palette
+## Slide 8 — Paradigm 1: classification over a quantized palette
 
 **Show:** `figures/ab_quantization.png` — the 233 in-gamut bins.
 
@@ -149,7 +189,7 @@
 
 ---
 
-## Slide 8 — Paradigm 1: class-rebalanced loss
+## Slide 9 — Paradigm 1: class-rebalanced loss
 
 **Show:** Equation `eq:loss` and the bin-frequency rebalancing equation `eq:rebalance`.
 
@@ -169,7 +209,7 @@
 
 ---
 
-## Slide 9 — Paradigm 1: annealed-mean decoding
+## Slide 10 — Paradigm 1: annealed-mean decoding
 
 **Show:** Equation `eq:annealed`.
 
@@ -189,7 +229,7 @@
 
 ---
 
-## Slide 10 — Paradigm 2: Zhang 2017 (interactive CNN)
+## Slide 11 — Paradigm 2: Zhang 2017 (interactive CNN)
 
 **Show:** `figures/zhang17_arch.png`
 
@@ -214,7 +254,7 @@
 
 ---
 
-## Slide 11 — Paradigm 3: DeOldify (GAN)
+## Slide 12 — Paradigm 3: DeOldify (GAN)
 
 **Show:** `figures/deoldify_arch.png`
 
@@ -243,49 +283,7 @@
 
 ---
 
-## Slide 12 — Paradigm 4: ControlNet + Stable Diffusion 2.1
-
-**Show:** `figures/controlnet_arch.png`
-
-**Say:**
-> The diffusion paradigm casts colorization as iterative denoising. We
-> follow the most popular open-source recipe: a pretrained Stable Diffusion
-> 2.1 text-to-image U-Net augmented with a ControlNet adapter that injects
-> the grayscale condition.
->
-> The cleverness of ControlNet is in *how* it adds conditioning without
-> destroying the pretrained priors:
->
-> 1. The Stable Diffusion backbone is **completely frozen**.
-> 2. ControlNet is a **trainable copy** of just the encoder and middle
->    blocks. It ingests the grayscale condition.
-> 3. The copy's outputs are fed back into the matching decoder blocks of
->    the frozen backbone through **zero-convolutions** — $1 \times 1$
->    layers initialized to weight zero.
->
-> The zero-conv trick is beautiful. At step zero of training, the
-> zero-convs output zeros, and the whole stack is provably identical to the
-> unmodified pretrained SD. Gradients still flow, weights move off zero,
-> and the network gradually learns how to inject condition information
-> *without ever harming the underlying prior*. That's why ControlNet is
-> stable to train on a single consumer GPU.
-
----
-
-## Slide 13 — Why diffusion is structurally slow
-
-**Show:** Either the ControlNet figure again, or a small "1 step vs. 50 steps" comparison.
-
-**Say:**
-> One thing worth saying before we get to numbers: diffusion is not a
-> single forward pass. It's a Markov chain of 20 to 50 denoising steps. So
-> latency is roughly an order of magnitude higher than a CNN forward pass.
-> That fact alone determines where the diffusion paradigm sits on the
-> speed--quality frontier.
-
----
-
-## Slide 14 — Experimental setup (briefly)
+## Slide 13 — Experimental setup (briefly)
 
 **Show:** A simple text slide with the key facts.
 
@@ -307,7 +305,7 @@
 
 ---
 
-## Slide 15 — Training curves
+## Slide 14 — Training curves
 
 **Show:** `figures/training_curves.png`
 
@@ -320,7 +318,7 @@
 
 ---
 
-## Slide 16 — Quantitative results
+## Slide 15 — Quantitative results
 
 **Show:** `figures/metrics_comparison.png` + the results table (`tab:results` in `results.tex`).
 
@@ -344,7 +342,7 @@
 
 ---
 
-## Slide 17 — Qualitative comparison
+## Slide 16 — Qualitative comparison
 
 **Show:** `figures/qualitative_grid.png`
 
@@ -366,7 +364,7 @@
 
 ---
 
-## Slide 18 — Per-image strengths
+## Slide 17 — Per-image strengths
 
 **Show:** `figures/model_strengths.png` + the win-rate table.
 
@@ -391,51 +389,18 @@
 
 ---
 
-## Slide 19 — The diffusion gap
+## Slide 18 — Speed-quality frontier (discussion)
 
-**Show:** Either a text-only slide or a screenshot of the HF 401 error.
-
-**Say:**
-> I want to spend a minute on the diffusion result because it's not a
-> number — it's an honest reproducibility gap, and that itself is a finding
-> about the open-source ecosystem.
->
-> The spec'd checkpoint requires Stable Diffusion 2.1 as its backbone. In
-> 2025 Stability AI **deprecated the entire SD 2.x line**. Every
-> `stabilityai/stable-diffusion-2*` URL on Hugging Face returns HTTP 401
-> even with a valid token.
->
-> I tried four alternatives:
->
-> - An SD 1.5 + brightness ControlNet — wrong conditioning. PSNR 6 dB.
-> - An SD-InstructPix2Pix fine-tune — produced NaNs at 9 minutes per
->   image. PSNR 5.8 dB.
-> - Another community SD 2.1 model — same backbone problem.
-> - A Flux-based pipeline — 12 billion params, doesn't fit on a 6 GB card.
->
-> Substituting any of these into the comparison would have been
-> *misleading*, so I report the slot as an honest gap. The lesson — and I'd
-> argue this is a research finding in itself — is that the *entire*
-> open-source diffusion-colorization stack in 2024 was anchored to one
-> backbone, and when that backbone was deprecated the downstream models
-> went with it. That's a real reproducibility risk in fast-moving toolchains.
-
----
-
-## Slide 20 — Speed-quality frontier (discussion)
-
-**Show:** A small scatter plot or text bullets — PSNR vs. inference time.
+**Show:** Text bullets — PSNR vs. inference time.
 
 **Say:**
-> The four evaluated points occupy distinct positions on the speed-quality
+> The three evaluated points occupy distinct positions on the speed-quality
 > frontier:
 >
 > - **CNNs are single forward passes** — 0.17 to 0.22 seconds per image even
 >   on a 6 GB GPU. Our model at 0.18s, DeOldify at 0.51s.
 > - **DeOldify buys its perceptual edge with a heavier U-Net and a larger
 >   render resolution.** Roughly 2.8x slower than us.
-> - **Diffusion would sit far to the slow end** — tens of denoising steps
->   per image.
 >
 > So the practical recommendation is paradigm-dependent:
 >
@@ -448,7 +413,7 @@
 
 ---
 
-## Slide 21 — Limitations and future work
+## Slide 19 — Limitations and future work
 
 **Show:** Bullet list.
 
@@ -461,14 +426,14 @@
 > 2. The benchmark is 1,000 images on a single GPU with no human-preference
 >    study. Perceptual quality is proxied by LPIPS, not measured directly.
 >
-> Beyond those, the diffusion slot should be revisited once a maintained
+> Beyond those, the diffusion paradigm should be revisited once a maintained
 > colorization checkpoint exists that does not depend on the deprecated
 > Stable Diffusion 2.1 backbone — that would complete the four-paradigm
-> comparison.
+> picture with a measured rather than inferred frontier point.
 
 ---
 
-## Slide 22 — Conclusion
+## Slide 20 — Conclusion
 
 **Show:** Three bullet recommendations.
 
@@ -484,6 +449,9 @@
 > 3. The methodology — class-rebalanced classification, soft palette
 >    quantization, annealed-mean decoding — is what actually does the
 >    work. Each piece exists to dodge the desaturation trap.
+> 4. The diffusion paradigm was scoped in and then explicitly excluded once
+>    its only viable backbone (SD 2.1) was deprecated upstream — itself a
+>    reproducibility finding rather than an evaluation result.
 >
 > Thank you. I'm happy to take questions.
 
@@ -493,6 +461,14 @@
 
 These are the questions a senior CV professor is most likely to ask. Drill them
 beforehand so you can answer in 30-60 seconds each.
+
+**Q: Why didn't you just use a different diffusion model?**
+A: I tried three — SD 1.5 brightness-ControlNet, SD-InstructPix2Pix, and
+Flux. The first produced PSNR around 6 dB because the conditioning channel was
+wrong. The second emitted NaNs at 9 minutes per image. The third doesn't fit
+on a 6 GB consumer GPU, which would break the "identical conditions"
+constraint of the benchmark. None of them is a faithful diffusion-colorization
+baseline; reporting one would have been misleading.
 
 **Q: Why didn't you just use the official 313-bin head?**
 A: Dimensional incompatibility. Our gamut hull yields 233 in-gamut bins;
@@ -528,11 +504,6 @@ the loss term at iteration 1649; rather than chase a specific numerical
 guard, we accepted the slower fp32 path. Batch size 4 still fits the 6 GB
 card.
 
-**Q: Why didn't you train a diffusion model from scratch?**
-A: Compute. A from-scratch SD-class diffusion model is on the order of
-hundreds of thousands of GPU-hours. We can only realistically use a
-*pretrained* one, and the pretrained one we needed was deprecated upstream.
-
 **Q: Is the win-rate analysis statistically significant?**
 A: The aggregate metric CIs are disjoint between our model and DeOldify on
 LPIPS and on PSNR; they overlap on SSIM. The per-image win rates are
@@ -540,7 +511,7 @@ descriptive — they don't carry a separate significance test.
 
 **Q: What's the failure case nobody else mentions?**
 A: Semantically ambiguous content that none of the models handle well — a
-shirt that could be any color, or skin with unusual lighting. All four
+shirt that could be any color, or skin with unusual lighting. All three
 paradigms default to the most-frequent training color in those cases. This
 is *fundamental to the task*, not specific to any architecture.
 
@@ -553,4 +524,4 @@ is *fundamental to the task*, not specific to any architecture.
 - [ ] Notebook `notebooks/03_*` open on a colorized image, as a live demo if asked
 - [ ] Memorize: 23.29 / 0.919 / 0.192 (our numbers), 24.00 / 0.919 / 0.148 (DeOldify), 1000 images / seed 42 / 10000 bootstrap
 - [ ] Practice the answer to the "head mismatch" question — it WILL come up
-- [ ] Practice the answer to "why did diffusion fail" — frame it as a finding
+- [ ] Practice the answer to "why no diffusion" — the SD 2.1 deprecation chain

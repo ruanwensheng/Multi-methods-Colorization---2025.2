@@ -137,7 +137,13 @@ class TestLoadConfig:
         comp = cfg["deep_learning"]["comparison"]
         assert "zhang2017" in comp
         assert "deoldify" in comp
-        assert "controlnet" in comp
+
+    def test_no_controlnet_or_diffusion_section(self, cfg):
+        # The diffusion paradigm is excluded from the benchmark — config.yaml
+        # must not advertise a controlnet model. See
+        # reports/deep_learning/sections/experiments.tex for the rationale.
+        comp = cfg["deep_learning"]["comparison"]
+        assert "controlnet" not in comp
 
     def test_no_scribble_or_example_sections(self, cfg):
         # This branch is deep-learning only; scribble/example live on other branches.

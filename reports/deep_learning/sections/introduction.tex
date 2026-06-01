@@ -26,11 +26,16 @@ markedly more vivid results. This insight anchors our study.
 
 This report---covering only the deep-learning method of the wider course
 project---reimplements the Zhang 2016 classification CNN, fine-tunes it on
-COCO~2017~\cite{lin2014coco}, and benchmarks it against three representative
+COCO~2017~\cite{lin2014coco}, and benchmarks it against two representative
 pretrained systems spanning the subsequent paradigms: an interactive
-CNN~\cite{zhang2017realtime} run in automatic mode, the NoGAN
-DeOldify~\cite{antic2019deoldify}, and a diffusion pipeline built on
-ControlNet~\cite{zhang2023controlnet}. Our contributions are:
+CNN~\cite{zhang2017realtime} run in automatic mode and the NoGAN
+DeOldify~\cite{antic2019deoldify}. The natural next paradigm in the timeline
+would be conditional diffusion, but every well-trained open-source diffusion
+colorizer in 2026 is built on Stable~Diffusion~2.1, which Stability~AI has
+deprecated upstream---so the diffusion paradigm cannot be evaluated under
+identical conditions, and we deliberately exclude it from the comparison
+(Sec.~\ref{sec:experiments} explains the exclusion in detail). Our
+contributions are:
 
 \begin{itemize}
   \item a from-scratch, fully-documented reimplementation of the Zhang~2016
@@ -38,7 +43,8 @@ ControlNet~\cite{zhang2023controlnet}. Our contributions are:
   \item a leakage-controlled evaluation protocol on a stratified 1{,}000-image
         subset of the held-out \texttt{test2017} split, with all metrics
         reported as \texttt{mean [95\% CI]} via a 10{,}000-resample bootstrap;
-  \item a four-paradigm comparison under identical conditions, with an honest
-        account of where a paradigm could not be reproduced (diffusion) and
-        where a reported number is misleading (the pretrained head mismatch).
+  \item a three-paradigm comparison under identical conditions, with an honest
+        account of where a reported number is misleading (the pretrained head
+        mismatch) and why the diffusion paradigm is excluded rather than
+        substituted with a degraded model.
 \end{itemize}

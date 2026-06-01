@@ -81,10 +81,11 @@ class TestBuildColorizer:
         c = evaluate_deep.build_colorizer(method="deoldify", model_path=None, cfg={}, device="cpu")
         assert isinstance(c, DeOldifyColorizer)
 
-    def test_method_controlnet_returns_controlnet_colorizer(self, evaluate_deep):
-        from src.deep_learning.pretrained import ControlNetColorizer
-        c = evaluate_deep.build_colorizer(method="controlnet", model_path=None, cfg={}, device="cpu")
-        assert isinstance(c, ControlNetColorizer)
+    def test_controlnet_method_is_not_registered(self, evaluate_deep):
+        # The diffusion paradigm was excluded from the benchmark (see
+        # reports/deep_learning/sections/experiments.tex). `controlnet` must
+        # not be a valid --method value.
+        assert "controlnet" not in evaluate_deep._COMPARISON_FACTORIES
 
     def test_unknown_method_raises(self, evaluate_deep):
         with pytest.raises(ValueError, match="(?i)unknown method"):

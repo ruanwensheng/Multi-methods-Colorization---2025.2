@@ -6,7 +6,7 @@
 
 **Multi-Methods Image Colorization** — Computer vision course project comparing three colorization approaches (scribble-based, example-based, deep learning) on separate branches.
 
-**This branch** implements the **deep learning method**: 4 DL categories, 5 model variants, evaluated on a shared COCO 2017 benchmark.
+**This branch** implements the **deep learning method**: 3 DL categories, 4 model variants, evaluated on a shared COCO 2017 benchmark. (The diffusion paradigm was scoped in originally but excluded once SD 2.1 was deprecated upstream — see `docs/benchmark_methodology.md` and `reports/deep_learning/sections/experiments.tex`.)
 
 ## Quick Orientation
 
@@ -32,7 +32,7 @@ src/deep_learning/     # Core module: model, training, evaluation, inference
 tools/                 # CLI entry points: download, train, evaluate, compare
 tests/                 # Unit tests (pytest) for all modules
 configs/               # config.yaml — single source of truth for hyperparams
-notebooks/             # 03 = DL pipeline, 04 = 5-model comparison
+notebooks/             # 03 = DL pipeline, 04 = 4-model comparison
 workflows/             # Pipeline documentation (SOPs)
 reports/deep_learning/ # LaTeX report (IEEEtran format)
 data/raw/coco2017/     # Dataset (downloaded via tools/download_coco.py)
@@ -43,7 +43,7 @@ results/deep_learning/ # metrics/, comparison/, figures/
 ## Environment
 
 - **Conda env:** `AI` — always activate before running anything
-- **GPU:** GTX 1660 Super (6GB) min / RTX 2080 Ti (11GB) for ControlNet
+- **GPU:** GTX 1660 Super (6GB) min
 - **Python:** 3.10+, PyTorch 2.x with CUDA 12.1
 - **Tracking:** MLflow (experiment: `deep-colorization`)
 - **Tests:** `pytest tests/ -v --timeout=60`
@@ -52,7 +52,7 @@ results/deep_learning/ # metrics/, comparison/, figures/
   torch/HF import. Don't let model downloads land in `C:\Users\...\.cache\` —
   C: is small and a full C: crashes training with WinError 1455.
 
-## The 5 Model Variants
+## The 4 Model Variants
 
 | # | Category | Model | Our Code? |
 |---|----------|-------|-----------|
@@ -60,9 +60,11 @@ results/deep_learning/ # metrics/, comparison/, figures/
 | 2 | CNN | Zhang16 Fine-tuned (COCO 2017) | Yes — fine-tuned |
 | 3 | Interactive CNN | Zhang17 SIGGRAPH (auto mode) | No — official package |
 | 4 | GAN | DeOldify (NoGAN) | No — pretrained wrapper |
-| 5 | Diffusion | ControlNet + SD 2.1 | No — HuggingFace pipeline |
 
-All models expose a unified API: `colorize(gray_image) -> (result_bgr, info_dict)`
+All models expose a unified API: `colorize(gray_image) -> (result_bgr, info_dict)`.
+A fifth diffusion-paradigm slot (ControlNet + SD 2.1) was originally scoped in
+but excluded once SD 2.1 was deprecated upstream; no diffusion model is
+evaluated on this branch.
 
 ## Operating Principles
 
@@ -106,8 +108,7 @@ This project uses the **WAT framework** (Workflows, Agents, Tools):
 ### Ask First Before
 - Changing the Zhang16Net architecture
 - Modifying the ab quantization bins
-- Adding comparison models beyond the 5 defined
-- Running ControlNet (requires ~10GB VRAM)
+- Adding comparison models beyond the 4 defined
 - Re-downloading COCO 2017 (18GB+ bandwidth)
 - Creating or overwriting workflow files
 - **Changing the benchmark composition** (size, source split, sampling strategy, seed) — these are
@@ -118,5 +119,5 @@ This project uses the **WAT framework** (Workflows, Agents, Tools):
 - Build a demo API on this branch (postponed to `main`)
 - Commit model weights or dataset files to git
 - Store secrets outside `.env`
-- Use DDColor or other models outside the 4 categories
+- Use DDColor or other models outside the 3 benchmarked categories
 - Skip MLflow logging for any experiment run

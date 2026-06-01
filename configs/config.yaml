@@ -73,8 +73,16 @@ deep_learning:
   # (NOT val2017, which is used for in-training validation/best-ckpt selection)
   benchmark_size: 1000       # shared test subset size, sampled from test2017
 
-  # Comparison models (4 categories: CNN, Interactive CNN, GAN, Diffusion)
+  # Comparison models (3 categories: CNN, Interactive CNN, GAN)
   # CNN: Zhang 2016 - our main reimplementation (see model.py)
+  #
+  # A fourth Diffusion category (ControlNet + SD 2.1) was originally scoped in
+  # but excluded from the benchmark after Stability AI deprecated the SD 2.x line
+  # upstream; every open-source colorization checkpoint we found is anchored to
+  # that backbone. No tested substitute (SD 1.5 brightness-ControlNet,
+  # SD-InstructPix2Pix, Flux) produced a faithful evaluation under the
+  # benchmark's identical-conditions constraint. See
+  # `reports/deep_learning/sections/experiments.tex` for the full rationale.
   comparison:
     # Interactive CNN: Zhang 2017 (SIGGRAPH) - automatic mode with zero hints
     # Paper: "Real-Time User-Guided Image Colorization with Learned Deep Priors"
@@ -87,26 +95,6 @@ deep_learning:
     deoldify:
       enabled: true
       model_path: "models/pretrained/deoldify_artistic.pth"
-    # Diffusion: ControlNet + Stable Diffusion 1.5 (substituted from SD 2.1)
-    # Theory: Palette (Saharia 2022), Practice: ControlNet (Zhang & Agrawala 2023)
-    # Repo: https://github.com/lllyasviel/ControlNet
-    #
-    # SUBSTITUTION (2026-05-25): The spec called for SD 2.1 + the neurallove
-    # SD 2.1 colorization ControlNet. Stability AI has since deprecated the
-    # entire SD 2.x line — it's no longer listed on their HF profile and all
-    # `stabilityai/stable-diffusion-2*` URLs return HTTP 401 with no public
-    # access path even with a valid HF token. We substituted the closest
-    # available open Diffusion-category pipeline:
-    #   - Base: sd-legacy/stable-diffusion-v1-5 (community-maintained SD 1.5)
-    #   - ControlNet: ioclab/control_v1p_sd15_brightness (conditions on
-    #     brightness, which IS the grayscale colorization signal)
-    # The model differs from the spec; the category does not.
-    controlnet:
-      enabled: true
-      controlnet_model: "ioclab/control_v1p_sd15_brightness"
-      sd_model: "sd-legacy/stable-diffusion-v1-5"
-      num_inference_steps: 30
-      guidance_scale: 7.5
 
 # --- Evaluation ---
 evaluation:

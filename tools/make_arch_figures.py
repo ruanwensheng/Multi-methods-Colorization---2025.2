@@ -1,4 +1,4 @@
-"""Generate schematic architecture figures for the four colorization paradigms.
+"""Generate schematic architecture figures for the three benchmarked colorization paradigms.
 
 The figures are intentionally drawn ourselves (not copied from the source
 papers) so that the report has a single visual style across paradigms and we
@@ -9,7 +9,6 @@ Outputs (saved to reports/deep_learning/figures/):
     zhang16_arch.png       - feed-forward classification CNN (Zhang 2016)
     zhang17_arch.png       - interactive CNN with hints branch (Zhang 2017)
     deoldify_arch.png      - U-Net + critic + NoGAN training (DeOldify)
-    controlnet_arch.png    - frozen SD UNet + trainable ControlNet copy
 """
 
 from __future__ import annotations
@@ -250,90 +249,9 @@ def deoldify():
     return out
 
 
-# ----- Figure 4: ControlNet + SD 2.1 ------------------------------------------
-def controlnet():
-    fig, ax = plt.subplots(figsize=(13.0, 5.2), dpi=160)
-    ax.set_xlim(0, 15.0); ax.set_ylim(0, 5.2); ax.axis("off")
-    ax.set_title("ControlNet + Stable Diffusion 2.1 — frozen text-to-image U-Net "
-                 "+ trainable encoder copy with zero-conv adapters",
-                 fontsize=10, pad=6)
-
-    # Frozen SD U-Net (top row) — wider boxes, more spacing
-    fz = [
-        (0.20, 1.10, IO,     "noisy latent\n$z_t$"),
-        (1.55, 1.30, FROZEN, "SD enc\nblock 1\n(frozen)"),
-        (3.10, 1.30, FROZEN, "SD enc\nblock 2\n(frozen)"),
-        (4.65, 1.30, FROZEN, "SD mid\n(frozen)"),
-        (6.20, 1.30, FROZEN, "SD dec\nblock 2\n(frozen)"),
-        (7.75, 1.30, FROZEN, "SD dec\nblock 1\n(frozen)"),
-        (9.30, 1.30, HEAD,   "ε-pred\nhead"),
-        (10.85, 1.30, IO,    "denoised\n$z_{t-1}$"),
-    ]
-    yf, hf = 3.45, 1.10
-    for x, w, col, txt in fz:
-        _box(ax, x, yf, w, hf, txt, col, fs=8)
-    for i in range(len(fz) - 1):
-        x0 = fz[i][0] + fz[i][1]
-        x1 = fz[i + 1][0]
-        _arrow(ax, x0, yf + hf / 2, x1, yf + hf / 2)
-    _label(ax, 4.5, 4.85, "Frozen pretrained backbone (Stable Diffusion 2.1)",
-           color="#666", fs=9.5, fw="bold")
-
-    # Trainable ControlNet copy (middle row) — aligned under the encoder + mid
-    cn = [
-        (1.55, 1.30, TRAIN, "copy of\nenc block 1\n(trainable)"),
-        (3.10, 1.30, TRAIN, "copy of\nenc block 2\n(trainable)"),
-        (4.65, 1.30, TRAIN, "copy of\nSD mid\n(trainable)"),
-    ]
-    yc, hc = 1.70, 1.10
-    for x, w, col, txt in cn:
-        _box(ax, x, yc, w, hc, txt, col, fs=8)
-    for i in range(len(cn) - 1):
-        x0 = cn[i][0] + cn[i][1]
-        x1 = cn[i + 1][0]
-        _arrow(ax, x0, yc + hc / 2, x1, yc + hc / 2)
-    _label(ax, 6.50, 1.50, "Trainable ControlNet copy",
-           color="#1e4a8c", fs=9.5, fw="bold", ha="left")
-
-    # Zero-conv adapters — feed each trainable block's output into the matching
-    # decoder block of the frozen backbone (skip-style).
-    pairs = [
-        (1.55 + 1.30 / 2, 7.75 + 1.30 / 2),  # cn enc1  -> SD dec1
-        (3.10 + 1.30 / 2, 6.20 + 1.30 / 2),  # cn enc2  -> SD dec2
-        (4.65 + 1.30 / 2, 4.65 + 1.30 / 2),  # cn mid   -> SD mid
-    ]
-    for cn_cx, sd_cx in pairs:
-        # zero-conv box just above the middle row
-        zx = cn_cx - 0.32
-        _box(ax, zx, yc + hc + 0.05, 0.64, 0.32, "0-conv", ZEROCONV, fs=7.2)
-        # arrow from zero-conv up to the target SD block (bottom edge)
-        _arrow(ax, cn_cx, yc + hc + 0.05 + 0.32,
-               sd_cx, yf, color="#a02a2a", lw=0.9)
-    _label(ax, 7.50, 3.10,
-           "zero-conv (init w = 0): backbone unchanged at t=0,\n"
-           "so SD's priors are preserved while the copy learns control.",
-           color="#a02a2a", fs=8, ha="left")
-
-    # Conditioning input (bottom-left)
-    _box(ax, 0.20, 0.20, 1.10, 1.10,
-         "Grayscale\nL (cond c)\n→ encoded", "#e7e0ff", fs=8)
-    _arrow(ax, 0.20 + 1.10, 0.75, 1.55, yc + hc / 2, color="#444")
-    _label(ax, 0.20, 1.50, "condition", color="#444", fs=8, ha="left")
-
-    # Iterative denoising banner
-    _label(ax, 12.20, 4.0, "× 20-50 DDIM\nsteps", color="#555",
-           fs=9, ha="left")
-
-    out = FIG_DIR / "controlnet_arch.png"
-    plt.savefig(out, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
-    return out
-
-
 if __name__ == "__main__":
     for name, fn in [("zhang16", zhang16),
                      ("zhang17", zhang17),
-                     ("deoldify", deoldify),
-                     ("controlnet", controlnet)]:
+                     ("deoldify", deoldify)]:
         path = fn()
         print(f"wrote {path}  ({path.stat().st_size/1024:.1f} KB)")

@@ -27,14 +27,15 @@ REQUIRED_BIB_KEYS = [
     "lin2014coco", "zhang2018lpips",
 ]
 
-# Figures referenced by the report. The four "*_arch.png" diagrams were added
+# Figures referenced by the report. The three "*_arch.png" diagrams were added
 # when the methodology section was expanded to discuss each paradigm's
 # architecture in detail; "Deep_Learning_method.png" is the cross-paradigm
-# pipeline overview reused from the project's reference materials.
+# pipeline overview reused from the project's reference materials. The diffusion
+# paradigm is excluded from the benchmark (see
+# reports/deep_learning/sections/experiments.tex), so no ControlNet figure.
 REQUIRED_FIGURES = [
     "Deep_Learning_method.png",
-    "zhang16_arch.png", "zhang17_arch.png",
-    "deoldify_arch.png", "controlnet_arch.png",
+    "zhang16_arch.png", "zhang17_arch.png", "deoldify_arch.png",
     "ab_quantization.png", "training_curves.png",
     "metrics_comparison.png", "qualitative_grid.png",
 ]
@@ -189,8 +190,20 @@ def test_results_section_reports_real_benchmark_numbers():
         assert token in body, f"results.tex missing benchmark PSNR {token}"
 
 
-def test_related_work_cites_the_four_paradigms():
-    """related_work.tex must cite the CNN/Interactive/GAN/Diffusion sources."""
+def test_related_work_cites_the_three_benchmarked_paradigms():
+    """related_work.tex must cite the CNN/Interactive/GAN paradigm papers
+    (the three benchmarked in this study). Diffusion is excluded; its papers
+    appear in experiments.tex only as references for the exclusion rationale."""
     body = _read(_section_path("related_work")) if os.path.exists(_section_path("related_work")) else ""
-    for key in ["zhang2016colorful", "zhang2017realtime", "vitoria2020chromagan", "saharia2022palette"]:
+    for key in ["zhang2016colorful", "zhang2017realtime", "vitoria2020chromagan"]:
         assert key in body, f"related_work.tex does not cite {key}"
+
+
+def test_report_excludes_diffusion_paradigm_from_methodology():
+    """The Diffusion paradigm was deliberately excluded after the SD 2.1
+    deprecation. method.tex should not contain a ControlNet subsection."""
+    body = _read(_section_path("method")) if os.path.exists(_section_path("method")) else ""
+    # method.tex should not have a controlnet subsection or include the figure
+    assert "controlnet_arch" not in body.lower()
+    # Section reference labels for an architecture deep-dive on diffusion
+    assert "sec:method:controlnet" not in body
