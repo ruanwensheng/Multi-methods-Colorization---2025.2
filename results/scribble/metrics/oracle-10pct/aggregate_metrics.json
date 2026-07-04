@@ -1,0 +1,11 @@
+{
+  "tag": "oracle-10pct",
+  "method": "scribble_based",
+  "num_images": 500,
+  "psnr_mean": 15.442819118434244,
+  "psnr_std": 4.050445774718261,
+  "ssim_mean": 0.6476763114876346,
+  "ssim_std": 0.1600422314821439,
+  "avg_time_sec": 12.74006919336319,
+  "avg_n_scribbled": 2701.112
+}
